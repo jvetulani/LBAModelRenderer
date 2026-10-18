@@ -7,7 +7,11 @@ import bpy
 
 if "--" not in sys.argv:
     raise SystemExit("Pass a .blend path after --")
-path = sys.argv[sys.argv.index("--") + 1]
+arguments = sys.argv[sys.argv.index("--") + 1:]
+if not arguments:
+    raise SystemExit("Pass a .blend path after --")
+path = arguments[0]
+expect_textures = "--expect-textures" in arguments[1:]
 bpy.ops.wm.open_mainfile(filepath=path)
 
 character = bpy.data.objects["CharacterMesh"]
@@ -17,16 +21,19 @@ assert platform_material.name.startswith("LBA Display Platform")
 assert any(node.type == "MIX" and node.data_type == "RGBA" for node in platform_material.node_tree.nodes), "Platform lost its warm color gradient"
 is_lba2 = "LBA1ActorShadow" not in bpy.data.objects
 if is_lba2:
-    assert len(character.data.materials) > 1, "LBA2 textured surfaces were lost"
-    assert any(node.type == "TEX_IMAGE" and node.image and node.interpolation == "Closest" and node.image.packed_file
-               for material in character.data.materials[1:] for node in material.node_tree.nodes)
+    if expect_textures:
+        assert len(character.data.materials) > 1, "LBA2 textured surfaces were lost"
+        assert any(node.type == "TEX_IMAGE" and node.image and node.interpolation == "Closest" and node.image.packed_file
+                   for material in character.data.materials[1:] for node in material.node_tree.nodes)
 else:
     assert bpy.data.objects["LBA1ActorShadow"].type == "MESH"
 assert any(image.size[:] == (256, 1) and image.packed_file for image in bpy.data.images)
 assert bpy.data.images["LBA1_Dither_4x4"].packed_file
 idle_actions = [action for action in bpy.data.actions if action.name.startswith("Idle_ANIM_")]
 if idle_actions:
-    armature = bpy.data.objects["LBA2_Character" if is_lba2 else "LBA1_Character"]
+    armatures = [obj for obj in bpy.data.objects if obj.type == "ARMATURE"]
+    assert len(armatures) == 1, "Expected one imported character armature"
+    armature = armatures[0]
     assert armature.animation_data.action in idle_actions, "Idle is not the selected Blender action"
 
 curve_count = 0
@@ -43,12 +50,29 @@ for action in bpy.data.actions:
     assert action_curves > 0, action.name
     curve_count += action_curves
 
-walk = bpy.data.actions.get("Walk_ANIM_109")
-if walk:
+walks = sorted((action for action in bpy.data.actions
+                if action.name.startswith("Walk_ANIM_") and not action.name.endswith("_loop")),
+               key=lambda action: action.name)
+assert walks, "No walk action survived export"
+walk = walks[0]
+if walk.name == "Walk_ANIM_109":
     curve = walk.layers[0].strips[0].channelbags[0].fcurves[0]
     first = curve.keyframe_points[0].co.x
     last = curve.keyframe_points[-1].co.x
     sample = first + (last - first) * 0.27
     assert abs(curve.evaluate(sample) - curve.evaluate(sample + last - first)) < 1e-4
 
-print(f"PASS: reopened {path}, {len(bpy.data.actions)} cyclic actions, {curve_count} repeating channels, warm platform and packed images", flush=True)
+armature = next(obj for obj in bpy.data.objects if obj.type == "ARMATURE")
+armature.animation_data_create()
+armature.animation_data.action = walk
+armature.animation_data.action_slot = walk.slots[0]
+first, last = walk.frame_range
+poses = []
+for fraction in (0.0, 0.25, 0.5, 0.75):
+    frame = first + (last - first) * fraction
+    bpy.context.scene.frame_set(int(frame), subframe=frame % 1.0)
+    poses.append(tuple(round(value, 4) for bone in armature.pose.bones
+                       for row in bone.matrix for value in row))
+assert len(set(poses)) > 1, "Walk action has keys but does not move the exported rig"
+
+print(f"PASS: reopened {path}, {len(bpy.data.actions)} cyclic actions, {curve_count} repeating channels, moving walk rig, warm platform and packed images", flush=True)
