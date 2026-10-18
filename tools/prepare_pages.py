@@ -22,7 +22,7 @@ def main() -> None:
     pack = source / "index.pck"
     pack_name = f"index-{hashlib.sha256(pack.read_bytes()).hexdigest()[:12]}.pck"
     for file in source.iterdir():
-        if file.is_file() and file.name != "index.pck" and file.name != "index.html":
+        if file.is_file() and file.name != "index.pck" and file.name != "index.html" and file.suffix != ".import":
             shutil.copy2(file, destination / file.name)
     shutil.copy2(pack, destination / pack_name)
 
