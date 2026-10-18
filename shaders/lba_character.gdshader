@@ -13,9 +13,10 @@ uniform int palette_index_override = -1;
 uniform bool use_mesh_lighting = false;
 uniform float mesh_light_span = 7.0;
 // 0 = palette bands, 1 = source MAT_DITHER faces (diagnostic),
-// 2 = strong screen dither, 3 = smooth, 4 = soft model-anchored dither.
+// 3 = smooth, 4 = soft model-anchored dither.
 uniform int dither_mode = 4;
 uniform float dither_pixel_scale = 1.0;
+uniform float soft_dither_strength = 0.7;
 uniform bool platform_style = false;
 // Approximate integer vector from LBA1 SetLightVector(896, 950, 0): a
 // 59-unit light rotated by the game's angle convention. Scene light changes
@@ -61,7 +62,7 @@ float anchored_dither_weight(vec2 coord) {
 }
 
 float keep_in_palette_ramp(float base_index, float lit_index) {
-	if (palette_ramp_size < 2.0 || dither_mode < 2) {
+	if (palette_ramp_size < 2.0 || (dither_mode != 3 && dither_mode != 4)) {
 		return mod(lit_index, 256.0);
 	}
 	float ramp_start = floor(base_index / palette_ramp_size) * palette_ramp_size;
@@ -105,11 +106,9 @@ void vertex() {
 		float vertex_shade = palette_index_override >= 0
 			? 0.0
 			: max(dot(CUSTOM0.xyz, source_light_vector), 0.0) / max(CUSTOM0.w, 1.0);
-		// Preview modes share one continuous light curve. Rounding before the
-		// fragment would expose triangle boundaries and darken strong dither.
-		// The source palette modes keep their original, more contrasty bands.
-		float preview_shade = 3.0 + vertex_shade * 0.65;
-		float shade = dither_mode >= 2 && palette_index_override < 0 ? preview_shade : floor(vertex_shade);
+		// Soft dither interpolates the original palette light value before
+		// resolving its bands. Its mean shade matches the source palette mode.
+		float shade = dither_mode == 4 && palette_index_override < 0 ? max(vertex_shade - 0.75, 0.0) : floor(vertex_shade);
 		source_palette_index = keep_in_palette_ramp(base_index, base_index + shade);
 		source_render_type = palette_index_override >= 0 ? -1.0 : UV2.y;
 	}
@@ -130,9 +129,6 @@ void fragment() {
 				? clamp(source_palette_index - source_base_index, 0.0, 15.0)
 				: normal_light_level;
 			float row = soft_shade || dither_mode == 3 ? floor(lighting) : floor(lighting + 0.5);
-			if (dither_mode == 2) {
-				row = floor(lighting) + (fract(lighting) > aperiodic_threshold(FRAGCOORD.xy) ? 1.0 : 0.0);
-			}
 			texel = floor(texture(shade_table, vec2((texel + 0.5) / 256.0, (row + 0.5) / 256.0)).r * 255.0 + 0.5);
 			if (soft_shade || dither_mode == 3) {
 				float next_index = floor(texture(shade_table, vec2((original_texel + 0.5) / 256.0, (min(row + 1.0, 15.0) + 0.5) / 256.0)).r * 255.0 + 0.5);
@@ -143,7 +139,7 @@ void fragment() {
 				if (soft_shade) {
 					vec2 coord = anchored_dither_coord();
 					vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
-					shaded_color = mix(shaded_color, stepped_color, anchored_dither_weight(coord));
+					shaded_color = mix(shaded_color, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
 				}
 			}
 		}
@@ -158,16 +154,13 @@ void fragment() {
 		if (dither_mode != 3 && dither_mode != 4) {
 			float steps = level * 8.0;
 			float threshold = 0.5;
-			if (dither_mode == 2) {
-				threshold = aperiodic_threshold(FRAGCOORD.xy);
-			}
 			level = (floor(steps) + (fract(steps) > threshold ? 1.0 : 0.0)) / 8.0;
 		}
 		ALBEDO = mix(vec3(0.42, 0.15, 0.015), vec3(0.98, 0.68, 0.075), level);
 		ROUGHNESS = 1.0;
 	} else if ((dither_mode == 3 || dither_mode == 4) && source_render_type >= 7.0) {
 		float pixel_shade = max(dot(normalize(pixel_source_normal), source_light_vector), 0.0) * pixel_light_scale;
-		float smooth_index = dither_mode == 3 ? keep_in_palette_ramp(source_base_index, source_base_index + 3.0 + pixel_shade * 0.65) : source_palette_index;
+		float smooth_index = dither_mode == 3 ? keep_in_palette_ramp(source_base_index, source_base_index + pixel_shade) : source_palette_index;
 		float lower_index = floor(smooth_index);
 		float upper_index = mod(lower_index + 1.0, 256.0);
 		vec3 lower_color = texture(palette_texture, vec2((lower_index + 0.5) / 256.0, 0.5)).rgb;
@@ -177,35 +170,29 @@ void fragment() {
 		if (dither_mode == 4) {
 			vec2 coord = anchored_dither_coord();
 			vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
-			ALBEDO = mix(ALBEDO, stepped_color, anchored_dither_weight(coord));
+			ALBEDO = mix(ALBEDO, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
 		}
 		ROUGHNESS = 1.0;
 	} else {
-		bool dither_face = (dither_mode == 1 && source_render_type >= 10.0)
-			|| (dither_mode == 2 && source_render_type >= 9.0);
+		bool dither_face = dither_mode == 1 && source_render_type >= 10.0;
 		if (dither_face) {
 			// LBA1 type 10 uses the dedicated SVGAPolyDith scanline path.
 			// Diffuse the 8.8 palette-index fraction along each screen row. The
 			// prefix sum is evaluated analytically in short blocks, so each fragment
 			// runs in constant time even at 4K. Original polygon-edge scan conversion
 			// and low-byte rotation still need a matched-game reference.
-			float cell = dither_mode == 1 ? 1.0 : max(dither_pixel_scale, 1.0);
+			float cell = 1.0;
 			float cell_x = floor(FRAGCOORD.x / cell);
 			float local_x = mod(cell_x, 64.0);
 			float row = floor(FRAGCOORD.y / cell);
 			float block = floor(cell_x / 64.0);
 			float phase = fract(row * 0.61803398875 + block * 0.41421356237);
-			if (dither_mode == 2) {
-				float lower = floor(source_palette_index);
-				palette_index = lower + (fract(source_palette_index) > aperiodic_threshold(FRAGCOORD.xy) ? 1.0 : 0.0);
-			} else {
 			float shade = floor(source_palette_index * 256.0) / 256.0;
 			float gradient = dFdx(source_palette_index) * cell;
 			float first = shade - gradient * local_x;
 			float prefix = (local_x + 1.0) * first + gradient * local_x * (local_x + 1.0) * 0.5;
 			float previous = local_x * first + gradient * (local_x - 1.0) * local_x * 0.5;
 			palette_index = floor(prefix + phase) - floor(previous + phase);
-			}
 		}
 		palette_index = mod(palette_index, 256.0);
 		ALBEDO = texture(palette_texture, vec2((palette_index + 0.5) / 256.0, 0.5)).rgb;

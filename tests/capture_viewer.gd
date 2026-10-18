@@ -16,6 +16,7 @@ func _capture() -> void:
 	var hide_opaque := false
 	var hide_platform := false
 	var dither_mode := 4
+	var soft_strength := -1.0
 	var animation_index := -1
 	var animation_frame := -1
 	var palette_index := -1
@@ -48,10 +49,10 @@ func _capture() -> void:
 			dither_mode = 0
 		elif argument == "--dither=source":
 			dither_mode = 1
-		elif argument == "--dither=strong":
-			dither_mode = 2
 		elif argument == "--dither=soft":
 			dither_mode = 4
+		elif argument.begins_with("--soft-strength="):
+			soft_strength = float(argument.trim_prefix("--soft-strength="))
 		elif argument == "--shading=smooth":
 			dither_mode = 3
 		elif argument.begins_with("--anim-index="):
@@ -99,6 +100,8 @@ func _capture() -> void:
 			return
 	ui.set_source(game_path, body_index)
 	viewer.set_dither_mode(dither_mode)
+	if soft_strength >= 0.0:
+		(viewer.character.get_node("Polygons").material_override as ShaderMaterial).set_shader_parameter("soft_dither_strength", clampf(soft_strength, 0.0, 1.0))
 	viewer.set_wireframe_visible(wireframe)
 	if animation_index >= 0:
 		var selected := viewer.select_animation(animation_index)

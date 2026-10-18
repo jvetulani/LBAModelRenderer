@@ -15,6 +15,7 @@ uniform float preview_ambient_level = 2.0;
 uniform float reverse_shade_strength = 0.0;
 uniform int dither_mode = 4;
 uniform float dither_pixel_scale = 1.0;
+uniform float soft_dither_strength = 0.7;
 uniform vec3 source_light_vector = vec3(-4.4, 6.41, 6.41);
 
 varying flat float face_palette_index;
@@ -109,9 +110,6 @@ void fragment() {
 		int texture_kind = int(face_render_type) % 4;
 		float light_row = clamp(texture_kind == 0 ? normal_light_level : texture_shade, 0.0, 15.0);
 		float row = dither_mode == 3 || dither_mode == 4 ? floor(light_row) : floor(light_row + 0.5);
-		if (dither_mode == 2) {
-			row = floor(light_row) + (fract(light_row) > aperiodic_threshold(FRAGCOORD.xy) ? 1.0 : 0.0);
-		}
 		float mapped_index = floor(texture(shade_table, vec2((base_index + 0.5) / 256.0, (row + 0.5) / 256.0)).r * 255.0 + 0.5);
 		vec3 texture_color = texture(palette_texture, vec2((mapped_index + 0.5) / 256.0, 0.5)).rgb;
 		if (dither_mode == 3 || dither_mode == 4) {
@@ -122,7 +120,7 @@ void fragment() {
 			if (dither_mode == 4) {
 				vec2 coord = anchored_dither_coord();
 				vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? next_color : texture_color;
-				texture_color = mix(smooth_color, stepped_color, anchored_dither_weight(coord));
+				texture_color = mix(smooth_color, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
 			} else {
 				texture_color = smooth_color;
 			}
@@ -151,14 +149,14 @@ void fragment() {
 		if (dither_mode == 4) {
 			vec2 coord = anchored_dither_coord();
 			vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
-			ALBEDO = mix(smooth_color, stepped_color, anchored_dither_weight(coord));
+			ALBEDO = mix(smooth_color, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
 		} else {
 			ALBEDO = smooth_color;
 		}
 	} else {
 		int kind = int(floor(face_render_type + 0.5));
 		bool source_dither = kind == 3 || kind == 5 || kind == 7 || kind == 11 || kind == 15 || kind == 19 || kind == 23;
-		bool dither = (dither_mode == 1 && source_dither) || (dither_mode == 2 && shade > 0.0);
+		bool dither = dither_mode == 1 && source_dither;
 		float index = lower_index;
 		if (dither) {
 			float threshold = aperiodic_threshold(FRAGCOORD.xy);

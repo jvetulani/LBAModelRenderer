@@ -30,8 +30,8 @@ func _run() -> void:
 	if ui.dither_mode.get_selected_id() != 4:
 		_fail("Soft dither is not the default shading choice")
 		return
-	if ui.dither_mode.get_item_index(1) < 0:
-		_fail("Original palette mode is missing from the selector")
+	if ui.dither_mode.get_item_index(1) >= 0 or ui.dither_mode.get_item_index(2) >= 0:
+		_fail("Unused source and strong dither modes remain in the selector")
 		return
 	ui.dither_changed.emit(3)
 	var viewer: CharacterViewer = main.get_node("CharacterViewer")
@@ -42,10 +42,6 @@ func _run() -> void:
 	ui.dither_changed.emit(4)
 	if platform_material.get_shader_parameter("dither_mode") != 4 or character_material.get_shader_parameter("dither_mode") != 4:
 		_fail("Soft dither did not restore the platform and character shading")
-		return
-	ui.dither_changed.emit(1)
-	if platform_material.get_shader_parameter("dither_mode") != 1 or character_material.get_shader_parameter("dither_mode") != 1:
-		_fail("Original palette mode did not reach both meshes")
 		return
 	ui.motion_grid_visible_changed.emit(false)
 	if viewer._motion_grid_enabled:
