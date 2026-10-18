@@ -28,7 +28,7 @@ static func decode(bytes: PackedByteArray) -> Dictionary:
 		for group_index in range(group_count):
 			var group_at := at + 8 + group_index * 8
 			var transform_type := int(bytes.decode_u16(group_at))
-			if transform_type > 2:
+			if transform_type > 1:
 				return _error("Animation frame %d group %d has unsupported transform %d" % [frame_index, group_index, transform_type])
 			transforms.append({
 				"type": transform_type,

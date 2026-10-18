@@ -1,9 +1,126 @@
-[gd_scene format=3 uid="uid://ge5aryyugb1e"]
+[gd_scene load_steps=2 format=3]
 
-[node name="Mainui" type="Control" unique_id=2013247093]
+[ext_resource type="Script" path="res://scripts/ui/main_ui.gd" id="1_ui"]
+
+[node name="MainUI" type="CanvasLayer"]
+script = ExtResource("1_ui")
+
+[node name="Screen" type="Control" parent="."]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
+
+[node name="TopPanel" type="PanelContainer" parent="Screen"]
+layout_mode = 1
+anchor_right = 1.0
+offset_bottom = 75.0
+
+[node name="Vertical" type="VBoxContainer" parent="Screen/TopPanel"]
+layout_mode = 2
+
+[node name="SourceRow" type="HBoxContainer" parent="Screen/TopPanel/Vertical"]
+layout_mode = 2
+
+[node name="SourceField" type="LineEdit" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Choose a local LBA1 installation folder"
+
+[node name="BrowseButton" type="Button" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+text = "Browse"
+
+[node name="BodyLabel" type="Label" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+text = "BODY entry"
+
+[node name="BodyNumber" type="SpinBox" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+max_value = 999.0
+
+[node name="LoadButton" type="Button" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+text = "Load"
+
+[node name="ExportGLBButton" type="Button" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+text = "Export GLB"
+
+[node name="ExportBlenderButton" type="Button" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+text = "Export Blender"
+
+[node name="DitherMode" type="OptionButton" parent="Screen/TopPanel/Vertical/SourceRow"]
+layout_mode = 2
+selected = 1
+item_count = 3
+popup/item_0/text = "Dither off"
+popup/item_0/id = 0
+popup/item_1/text = "Dithered model"
+popup/item_1/id = 2
+popup/item_2/text = "Modern smooth"
+popup/item_2/id = 3
+tooltip_text = "Dithered model is the default. Modern smooth uses per-pixel lighting and continuous palette colours."
+
+[node name="Status" type="Label" parent="Screen/TopPanel/Vertical"]
+layout_mode = 2
+text = "Left drag to orbit; middle or right drag to pan; wheel to zoom."
+
+[node name="AnimationPanel" type="PanelContainer" parent="Screen"]
+layout_mode = 1
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -48.0
+
+[node name="AnimationRow" type="HBoxContainer" parent="Screen/AnimationPanel"]
+layout_mode = 2
+
+[node name="AnimationLabel" type="Label" parent="Screen/AnimationPanel/AnimationRow"]
+layout_mode = 2
+text = "Animation"
+
+[node name="AnimationList" type="OptionButton" parent="Screen/AnimationPanel/AnimationRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(210, 0)
+
+[node name="PlayButton" type="Button" parent="Screen/AnimationPanel/AnimationRow"]
+layout_mode = 2
+text = "Play"
+
+[node name="SpeedList" type="OptionButton" parent="Screen/AnimationPanel/AnimationRow"]
+layout_mode = 2
+selected = 1
+item_count = 3
+popup/item_0/text = "0.5×"
+popup/item_0/id = 0
+popup/item_1/text = "1×"
+popup/item_1/id = 1
+popup/item_2/text = "2×"
+popup/item_2/id = 2
+
+[node name="FrameSlider" type="HSlider" parent="Screen/AnimationPanel/AnimationRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 1.0
+
+[node name="FrameLabel" type="Label" parent="Screen/AnimationPanel/AnimationRow"]
+layout_mode = 2
+text = "No animation"
+
+[node name="FolderDialog" type="FileDialog" parent="Screen"]
+title = "Select LBA1 installation folder"
+size = Vector2i(700, 500)
+access = 2
+file_mode = 2
+
+[node name="ExportDialog" type="FileDialog" parent="Screen"]
+title = "Save character"
+size = Vector2i(700, 500)
+access = 2
+file_mode = 4

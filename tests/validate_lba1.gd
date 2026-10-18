@@ -45,6 +45,24 @@ func _init() -> void:
 	if not palette_entry["ok"] or palette_entry["data"].size() != 768:
 		_fail("LBA1 palette entry is missing or invalid")
 		return
+	var shadow_entry := HQRReader.read_entry(lba1_dir.path_join("RESS.HQR"), 4)
+	if not shadow_entry["ok"]:
+		_fail("LBA1 shadow graphic bank is missing")
+		return
+	var shadow := LBA1GraphDecoder.decode_sprite(shadow_entry["data"], 2)
+	if not shadow["ok"] or shadow["width"] != 27 or shadow["height"] != 17:
+		_fail("LBA1 actor shadow sprite did not decode")
+		return
+	var covered := 0
+	for index in range(shadow["coverage"].size()):
+		if shadow["coverage"][index] != 0:
+			covered += 1
+			if shadow["pixels"][index] != 16:
+				_fail("LBA1 shadow sprite has an unexpected palette index")
+				return
+	if covered != 182:
+		_fail("LBA1 shadow checker pattern changed")
+		return
 	var second_game := HQRReader.read_entry(lba2_dir.path_join("BODY.HQR"), 0)
 	if not second_game["ok"] or second_game["mode"] != 2 or second_game["data"].size() != 7804:
 		_fail("LBA2 compressed HQR entry did not decode")

@@ -10,8 +10,72 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray) 
 	character.name = "LBA1Body"
 	var palette_texture := _make_palette_texture(palette_bytes)
 	var points: PackedVector3Array = body["pose_points"]
+	var polygons_node := MeshInstance3D.new()
+	polygons_node.name = "Polygons"
+	polygons_node.mesh = _build_polygon_mesh(body, points, [])
+	polygons_node.material_override = _make_material(palette_texture, -1)
+	character.add_child(polygons_node)
+
+	for sphere_data in body["spheres"]:
+		var sphere := MeshInstance3D.new()
+		sphere.name = "Sphere_%d" % sphere_data["center"]
+		sphere.set_meta("center_index", sphere_data["center"])
+		var radius := float(sphere_data["radius"]) * UNIT_SCALE
+		var shape := SphereMesh.new()
+		shape.radius = radius
+		shape.height = radius * 2.0
+		shape.radial_segments = 12
+		shape.rings = 6
+		sphere.mesh = shape
+		sphere.position = points[sphere_data["center"]] * UNIT_SCALE
+		sphere.material_override = _make_material(palette_texture, sphere_data["palette_index"])
+		character.add_child(sphere)
+
+	for line_data in body["lines"]:
+		var line := MeshInstance3D.new()
+		line.name = "Line_%d_%d" % [line_data["first"], line_data["second"]]
+		line.set_meta("first_index", line_data["first"])
+		line.set_meta("second_index", line_data["second"])
+		var shape := CylinderMesh.new()
+		shape.top_radius = 0.006
+		shape.bottom_radius = 0.006
+		shape.radial_segments = 4
+		line.mesh = shape
+		line.material_override = _make_material(palette_texture, line_data["palette_index"])
+		character.add_child(line)
+		_set_line_pose(line, points[line_data["first"]], points[line_data["second"]])
+
+	return character
+
+
+static func update_pose(character: Node3D, body: Dictionary, pose: Dictionary) -> void:
+	var points: PackedVector3Array = pose["points"]
+	var polygon_mesh: MeshInstance3D = character.get_node("Polygons")
+	polygon_mesh.mesh = _build_polygon_mesh(body, points, pose["bases"])
+	for child in character.get_children():
+		if child.has_meta("center_index"):
+			child.position = points[int(child.get_meta("center_index"))] * UNIT_SCALE
+		elif child.has_meta("first_index"):
+			_set_line_pose(child, points[int(child.get_meta("first_index"))], points[int(child.get_meta("second_index"))])
+
+
+static func _set_line_pose(line: MeshInstance3D, first_raw: Vector3, second_raw: Vector3) -> void:
+	var first := first_raw * UNIT_SCALE
+	var second := second_raw * UNIT_SCALE
+	var direction := second - first
+	line.visible = direction.length_squared() >= 0.000001
+	if not line.visible:
+		return
+	var shape: CylinderMesh = line.mesh
+	shape.height = direction.length()
+	line.position = (first + second) * 0.5
+	line.quaternion = Quaternion(Vector3.UP, direction.normalized())
+
+
+static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, bases: Array) -> ArrayMesh:
 	var normals: PackedVector3Array = body["normals"]
 	var normal_divisors: PackedInt32Array = body["normal_divisors"]
+	var point_groups: PackedInt32Array = body["point_groups"]
 	var vertices := PackedVector3Array()
 	var vertex_normals := PackedVector3Array()
 	var palette_coordinates := PackedVector2Array()
@@ -34,6 +98,8 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray) 
 				var divisor := 1.0
 				if normal_index >= 0:
 					source_normal = normals[normal_index]
+					if not bases.is_empty():
+						source_normal = bases[point_groups[point_indices[corner]]] * source_normal
 					divisor = float(normal_divisors[normal_index])
 					if source_normal.length_squared() > 0.0:
 						normal = source_normal.normalized()
@@ -49,46 +115,7 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray) 
 	mesh_arrays[Mesh.ARRAY_CUSTOM0] = source_normals
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_arrays, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
-	var polygons_node := MeshInstance3D.new()
-	polygons_node.name = "Polygons"
-	polygons_node.mesh = mesh
-	polygons_node.material_override = _make_material(palette_texture, -1)
-	character.add_child(polygons_node)
-
-	for sphere_data in body["spheres"]:
-		var sphere := MeshInstance3D.new()
-		sphere.name = "Sphere_%d" % sphere_data["center"]
-		var radius := float(sphere_data["radius"]) * UNIT_SCALE
-		var shape := SphereMesh.new()
-		shape.radius = radius
-		shape.height = radius * 2.0
-		shape.radial_segments = 12
-		shape.rings = 6
-		sphere.mesh = shape
-		sphere.position = points[sphere_data["center"]] * UNIT_SCALE
-		sphere.material_override = _make_material(palette_texture, sphere_data["palette_index"])
-		character.add_child(sphere)
-
-	for line_data in body["lines"]:
-		var first := points[line_data["first"]] * UNIT_SCALE
-		var second := points[line_data["second"]] * UNIT_SCALE
-		var direction := second - first
-		if direction.length_squared() < 0.000001:
-			continue
-		var line := MeshInstance3D.new()
-		line.name = "Line_%d_%d" % [line_data["first"], line_data["second"]]
-		var shape := CylinderMesh.new()
-		shape.top_radius = 0.006
-		shape.bottom_radius = 0.006
-		shape.height = direction.length()
-		shape.radial_segments = 4
-		line.mesh = shape
-		line.position = (first + second) * 0.5
-		line.quaternion = Quaternion(Vector3.UP, direction.normalized())
-		line.material_override = _make_material(palette_texture, line_data["palette_index"])
-		character.add_child(line)
-
-	return character
+	return mesh
 
 
 static func _make_palette_texture(bytes: PackedByteArray) -> ImageTexture:

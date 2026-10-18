@@ -18,8 +18,8 @@ static func sample(body: Dictionary, animation: Dictionary, source_frame: int, t
 		var parent: int = group["parent"]
 		var parent_basis := Basis.IDENTITY if parent < 0 else bases[parent]
 		var pivot := Vector3.ZERO if parent < 0 else points[group["pivot"]]
-		var from: Dictionary = source_transforms[min(group_index, source_transforms.size() - 1)]
-		var to: Dictionary = target_transforms[min(group_index, target_transforms.size() - 1)]
+		var from: Dictionary = source_transforms[group_index] if group_index < source_transforms.size() else {"type": 0, "values": Vector3i.ZERO}
+		var to: Dictionary = target_transforms[group_index] if group_index < target_transforms.size() else {"type": 0, "values": Vector3i.ZERO}
 		var transform_type: int = to["type"]
 		var values := Vector3.ZERO
 		for axis in range(3):

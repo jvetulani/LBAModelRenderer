@@ -1,22 +1,75 @@
-[gd_scene load_steps=4 format=3 uid="uid://b7j6icyxu2kws"]
+[gd_scene load_steps=14 format=3 uid="uid://b7j6icyxu2kws"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/camera/orbit_camera.gd" id="2_camera"]
+[ext_resource type="Script" path="res://scripts/viewer/character_viewer.gd" id="3_viewer"]
+[ext_resource type="PackedScene" path="res://assets/scenes/mainui.tscn" id="4_ui"]
+[ext_resource type="Script" path="res://scripts/platform/web_archive_picker.gd" id="5_picker"]
+[ext_resource type="Script" path="res://scripts/export/export_controller.gd" id="6_export"]
+[ext_resource type="Script" path="res://scripts/render/display_platform.gd" id="7_platform"]
+[ext_resource type="Shader" path="res://shaders/lba_character.gdshader" id="8_character_shader"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_display"]
 top_radius = 0.65
 bottom_radius = 0.7
 height = 0.12
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_display"]
-albedo_color = Color(0.35, 0.39, 0.44, 1)
+[sub_resource type="Gradient" id="Gradient_preview_palette"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(0.35, 0.39, 0.44, 1, 0.35, 0.39, 0.44, 1)
 
-[node name="Main" type="Node3D" unique_id=1359220893]
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_preview_palette"]
+gradient = SubResource("Gradient_preview_palette")
+width = 256
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_display"]
+shader = ExtResource("8_character_shader")
+shader_parameter/palette_texture = SubResource("GradientTexture1D_preview_palette")
+shader_parameter/palette_index_override = 240
+shader_parameter/use_mesh_lighting = true
+shader_parameter/mesh_light_span = 7.0
+shader_parameter/dither_mode = 2
+shader_parameter/dither_pixel_scale = 1.0
+shader_parameter/source_light_vector = Vector3(-25.8, 37.6, 37.6)
+
+[sub_resource type="Environment" id="Environment_stage"]
+background_mode = 1
+background_color = Color(0.11, 0.14, 0.19, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.35, 0.38, 0.43, 1)
+ambient_light_energy = 0.0
+
+[node name="Main" type="Node3D"]
 script = ExtResource("1_main")
 
+[node name="StageEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_stage")
+
+[node name="OrbitCamera" type="Camera3D" parent="."]
+projection = 1
+current = true
+size = 3.4
+script = ExtResource("2_camera")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-45, 30, 0)
+
 [node name="DisplayBlock" type="MeshInstance3D" parent="."]
-position = Vector3(0, -0.52, 0)
+position = Vector3(0, -0.525, 0)
 mesh = SubResource("CylinderMesh_display")
-material_override = SubResource("StandardMaterial3D_display")
+material_override = SubResource("ShaderMaterial_display")
+script = ExtResource("7_platform")
 
 [node name="CharacterStandPoint" type="Marker3D" parent="."]
 position = Vector3(0, -0.46, 0)
+
+[node name="CharacterViewer" type="Node3D" parent="."]
+script = ExtResource("3_viewer")
+
+[node name="MainUI" parent="." instance=ExtResource("4_ui")]
+
+[node name="WebArchivePicker" type="Node" parent="."]
+script = ExtResource("5_picker")
+
+[node name="ExportController" type="Node" parent="."]
+script = ExtResource("6_export")
