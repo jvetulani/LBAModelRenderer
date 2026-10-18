@@ -13,7 +13,7 @@ uniform bool use_mesh_lighting = false;
 uniform float mesh_light_span = 10.0;
 uniform float preview_ambient_level = 2.0;
 uniform float reverse_shade_strength = 0.0;
-uniform int dither_mode = 2;
+uniform int dither_mode = 4;
 uniform float dither_pixel_scale = 1.0;
 uniform vec3 source_light_vector = vec3(-4.4, 6.41, 6.41);
 
@@ -24,6 +24,7 @@ varying float vertex_shade;
 varying vec3 pixel_normal;
 varying vec2 affine_uv_times_w;
 varying float affine_w;
+varying vec3 dither_anchor;
 
 float dither_hash(vec2 coordinate) {
 	return fract(sin(dot(coordinate, vec2(127.1, 311.7))) * 43758.5453);
@@ -31,6 +32,27 @@ float dither_hash(vec2 coordinate) {
 
 float aperiodic_threshold(vec2 screen_pixel) {
 	return dither_hash(floor(screen_pixel / max(dither_pixel_scale, 1.0)));
+}
+
+vec2 anchored_dither_coord() {
+	vec3 face_axis = abs(cross(dFdx(dither_anchor), dFdy(dither_anchor)));
+	if (face_axis.x > face_axis.y && face_axis.x > face_axis.z) {
+		return dither_anchor.yz * 256.0;
+	}
+	if (face_axis.y > face_axis.z) {
+		return dither_anchor.xz * 256.0;
+	}
+	return dither_anchor.xy * 256.0;
+}
+
+float anchored_dither_threshold(vec2 coord) {
+	vec2 cell = floor(coord);
+	return fract(52.9829189 * fract(dot(cell, vec2(0.06711056, 0.00583715))));
+}
+
+float anchored_dither_weight(vec2 coord) {
+	float footprint = max(length(dFdx(coord)), length(dFdy(coord)));
+	return 0.28 * (1.0 - smoothstep(0.75, 1.5, footprint));
 }
 
 float varied_bayer_threshold(vec2 screen_pixel, float cell) {
@@ -56,6 +78,7 @@ void vertex() {
 	float clip_w = (PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).w;
 	affine_uv_times_w = UV * clip_w;
 	affine_w = clip_w;
+	dither_anchor = CUSTOM2.xyz;
 	pixel_normal = use_mesh_lighting ? normalize(MODEL_NORMAL_MATRIX * NORMAL) : CUSTOM0.xyz;
 	float light_span = use_mesh_lighting ? mesh_light_span : length(source_light_vector);
 	float source_strength = use_mesh_lighting ? 1.0 : min(length(pixel_normal) / 16384.0, 1.0);
@@ -85,16 +108,24 @@ void fragment() {
 		}
 		int texture_kind = int(face_render_type) % 4;
 		float light_row = clamp(texture_kind == 0 ? normal_light_level : texture_shade, 0.0, 15.0);
-		float row = floor(light_row + 0.5);
+		float row = dither_mode == 3 || dither_mode == 4 ? floor(light_row) : floor(light_row + 0.5);
 		if (dither_mode == 2) {
 			row = floor(light_row) + (fract(light_row) > aperiodic_threshold(FRAGCOORD.xy) ? 1.0 : 0.0);
 		}
 		float mapped_index = floor(texture(shade_table, vec2((base_index + 0.5) / 256.0, (row + 0.5) / 256.0)).r * 255.0 + 0.5);
 		vec3 texture_color = texture(palette_texture, vec2((mapped_index + 0.5) / 256.0, 0.5)).rgb;
-		if (dither_mode == 3) {
+		if (dither_mode == 3 || dither_mode == 4) {
 			float next_index = floor(texture(shade_table, vec2((base_index + 0.5) / 256.0, (min(row + 1.0, 15.0) + 0.5) / 256.0)).r * 255.0 + 0.5);
 			vec3 next_color = texture(palette_texture, vec2((next_index + 0.5) / 256.0, 0.5)).rgb;
-			texture_color = mix(texture_color, next_color, fract(light_row));
+			float fraction = fract(light_row);
+			vec3 smooth_color = mix(texture_color, next_color, fraction);
+			if (dither_mode == 4) {
+				vec2 coord = anchored_dither_coord();
+				vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? next_color : texture_color;
+				texture_color = mix(smooth_color, stepped_color, anchored_dither_weight(coord));
+			} else {
+				texture_color = smooth_color;
+			}
 		}
 		ALBEDO = texture_color;
 	} else {
@@ -112,10 +143,18 @@ void fragment() {
 		: min(base_index + shade, ramp_start + 15.0);
 	float lower_index = floor(smooth_index);
 	float upper_index = mod(lower_index + 1.0, 256.0);
-	if (dither_mode == 3) {
+	if (dither_mode == 3 || dither_mode == 4) {
 		vec3 lower_color = texture(palette_texture, vec2((lower_index + 0.5) / 256.0, 0.5)).rgb;
 		vec3 upper_color = texture(palette_texture, vec2((upper_index + 0.5) / 256.0, 0.5)).rgb;
-		ALBEDO = mix(lower_color, upper_color, fract(smooth_index));
+		float fraction = fract(smooth_index);
+		vec3 smooth_color = mix(lower_color, upper_color, fraction);
+		if (dither_mode == 4) {
+			vec2 coord = anchored_dither_coord();
+			vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
+			ALBEDO = mix(smooth_color, stepped_color, anchored_dither_weight(coord));
+		} else {
+			ALBEDO = smooth_color;
+		}
 	} else {
 		int kind = int(floor(face_render_type + 0.5));
 		bool source_dither = kind == 3 || kind == 5 || kind == 7 || kind == 11 || kind == 15 || kind == 19 || kind == 23;

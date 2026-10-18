@@ -29,6 +29,7 @@ signal lba2_palette_selected(index: int)
 @onready var blender_button: Button = $Screen/TopPanel/Vertical/SourceRow/ExportBlenderButton
 @onready var palette_list: OptionButton = $Screen/LBA2Palette
 @onready var shadow_toggle: CheckButton = $Screen/ShadowToggle
+@onready var shadow_label: Label = $Screen/ShadowLabel
 
 var _syncing_frame := false
 var _has_animation := false
@@ -81,6 +82,7 @@ func set_game(game_name: String) -> void:
 
 func set_shadow_available(available: bool) -> void:
 	shadow_toggle.visible = available
+	shadow_label.visible = available
 	shadow_visible_changed.emit(shadow_toggle.button_pressed)
 
 

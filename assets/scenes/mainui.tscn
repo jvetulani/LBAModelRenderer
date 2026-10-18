@@ -1,6 +1,58 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/main_ui.gd" id="1_ui"]
+[ext_resource type="Theme" path="res://assets/ui/viewer_theme.tres" id="2_theme"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_left.png" id="3_left"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/arrow_right.png" id="4_right"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/toggle_on.png" id="5_toggle_on"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/toggle_off.png" id="6_toggle_off"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/slider_grabber.png" id="7_grabber"]
+
+[sub_resource type="StyleBoxFlat" id="TopBarStyle"]
+bg_color = Color(0.09, 0.105, 0.13, 1)
+content_margin_left = 12.0
+content_margin_top = 5.0
+content_margin_right = 12.0
+content_margin_bottom = 5.0
+
+[sub_resource type="StyleBoxFlat" id="BottomBarStyle"]
+bg_color = Color(0.09, 0.105, 0.13, 1)
+content_margin_left = 12.0
+content_margin_top = 4.0
+content_margin_right = 12.0
+content_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="PressedStyle"]
+bg_color = Color(0.98, 0.68, 0.075, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 6.0
+content_margin_top = 3.0
+content_margin_right = 6.0
+content_margin_bottom = 3.0
+
+[sub_resource type="StyleBoxFlat" id="SliderFillStyle"]
+bg_color = Color(0.98, 0.68, 0.075, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="NavigationStyle"]
+bg_color = Color(0.085, 0.105, 0.14, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="NavigationHoverStyle"]
+bg_color = Color(0.16, 0.20, 0.27, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
 
 [node name="MainUI" type="CanvasLayer"]
 script = ExtResource("1_ui")
@@ -13,11 +65,13 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+theme = ExtResource("2_theme")
 
 [node name="TopPanel" type="PanelContainer" parent="Screen"]
 layout_mode = 1
 anchor_right = 1.0
-offset_bottom = 75.0
+offset_bottom = 86.0
+theme_override_styles/panel = SubResource("TopBarStyle")
 
 [node name="Vertical" type="VBoxContainer" parent="Screen/TopPanel"]
 layout_mode = 2
@@ -33,6 +87,8 @@ placeholder_text = "Choose a local LBA1 installation folder"
 [node name="BrowseButton" type="Button" parent="Screen/TopPanel/Vertical/SourceRow"]
 layout_mode = 2
 text = "Browse"
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="BodyLabel" type="Label" parent="Screen/TopPanel/Vertical/SourceRow"]
 layout_mode = 2
@@ -47,22 +103,31 @@ placeholder_text = "#"
 [node name="ExportGLBButton" type="Button" parent="Screen/TopPanel/Vertical/SourceRow"]
 layout_mode = 2
 text = "Export GLB"
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="ExportBlenderButton" type="Button" parent="Screen/TopPanel/Vertical/SourceRow"]
 layout_mode = 2
 text = "Export Blender"
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="DitherMode" type="OptionButton" parent="Screen/TopPanel/Vertical/SourceRow"]
 layout_mode = 2
 selected = 1
-item_count = 3
+item_count = 4
 popup/item_0/text = "Dither off"
 popup/item_0/id = 0
-popup/item_1/text = "Dithered model"
-popup/item_1/id = 2
-popup/item_2/text = "Modern smooth"
-popup/item_2/id = 3
-tooltip_text = "Dithered model is the default. Modern smooth uses per-pixel lighting and continuous palette colours."
+popup/item_1/text = "Soft dither"
+popup/item_1/id = 4
+popup/item_2/text = "Strong dither"
+popup/item_2/id = 2
+popup/item_3/text = "Modern smooth"
+popup/item_3/id = 3
+tooltip_text = "Soft dither follows the model and fades at small sizes. Strong dither shows the original full-strength preview pattern."
+theme_override_colors/font_color = Color(0.98, 0.68, 0.075, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="Status" type="Label" parent="Screen/TopPanel/Vertical"]
 layout_mode = 2
@@ -75,55 +140,124 @@ anchor_right = 1.0
 offset_left = -156.0
 offset_top = 86.0
 offset_right = -12.0
-offset_bottom = 146.0
+offset_bottom = 150.0
 theme_override_constants/separation = 8
 
 [node name="PreviousBody" type="Button" parent="Screen/BodyNavigation"]
-custom_minimum_size = Vector2(68, 60)
+custom_minimum_size = Vector2(68, 64)
 layout_mode = 2
 tooltip_text = "Previous BODY entry"
-theme_override_font_sizes/font_size = 28
-text = "<"
+icon = ExtResource("3_left")
+icon_alignment = 1
+expand_icon = true
+theme_override_constants/icon_max_width = 44
+theme_override_colors/icon_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_colors/icon_hover_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/normal = SubResource("NavigationStyle")
+theme_override_styles/hover = SubResource("NavigationHoverStyle")
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="NextBody" type="Button" parent="Screen/BodyNavigation"]
-custom_minimum_size = Vector2(68, 60)
+custom_minimum_size = Vector2(68, 64)
 layout_mode = 2
 tooltip_text = "Next BODY entry"
-theme_override_font_sizes/font_size = 28
-text = ">"
+icon = ExtResource("4_right")
+icon_alignment = 1
+expand_icon = true
+theme_override_constants/icon_max_width = 44
+theme_override_colors/icon_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_colors/icon_hover_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/normal = SubResource("NavigationStyle")
+theme_override_styles/hover = SubResource("NavigationHoverStyle")
+theme_override_styles/pressed = SubResource("PressedStyle")
+
+[node name="PlatformLabel" type="Label" parent="Screen"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -220.0
+offset_top = 151.0
+offset_right = -88.0
+offset_bottom = 197.0
+vertical_alignment = 1
+horizontal_alignment = 2
+text = "Platform"
 
 [node name="PlatformToggle" type="CheckButton" parent="Screen"]
 layout_mode = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -156.0
+offset_left = -80.0
 offset_top = 151.0
 offset_right = -12.0
-offset_bottom = 191.0
+offset_bottom = 197.0
+custom_minimum_size = Vector2(68, 46)
 button_pressed = true
-text = "Platform"
+theme_override_styles/normal = SubResource("NavigationStyle")
+theme_override_styles/hover = SubResource("NavigationHoverStyle")
+theme_override_styles/pressed = SubResource("PressedStyle")
+theme_override_icons/checked = ExtResource("5_toggle_on")
+theme_override_icons/unchecked = ExtResource("6_toggle_off")
+theme_override_colors/font_pressed_color = Color(0.98, 0.68, 0.075, 1)
+
+[node name="ShadowLabel" type="Label" parent="Screen"]
+visible = false
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -220.0
+offset_top = 209.0
+offset_right = -88.0
+offset_bottom = 255.0
+vertical_alignment = 1
+horizontal_alignment = 2
+text = "Shadow"
 
 [node name="ShadowToggle" type="CheckButton" parent="Screen"]
 layout_mode = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -156.0
-offset_top = 197.0
+offset_left = -80.0
+offset_top = 209.0
 offset_right = -12.0
-offset_bottom = 237.0
+offset_bottom = 255.0
+custom_minimum_size = Vector2(68, 46)
 button_pressed = true
-text = "Shadow"
 visible = false
+theme_override_styles/normal = SubResource("NavigationStyle")
+theme_override_styles/hover = SubResource("NavigationHoverStyle")
+theme_override_styles/pressed = SubResource("PressedStyle")
+theme_override_icons/checked = ExtResource("5_toggle_on")
+theme_override_icons/unchecked = ExtResource("6_toggle_off")
+theme_override_colors/font_pressed_color = Color(0.98, 0.68, 0.075, 1)
+
+[node name="WireframeLabel" type="Label" parent="Screen"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -220.0
+offset_top = 267.0
+offset_right = -88.0
+offset_bottom = 313.0
+vertical_alignment = 1
+horizontal_alignment = 2
+text = "Wireframe"
 
 [node name="WireframeToggle" type="CheckButton" parent="Screen"]
 layout_mode = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -156.0
-offset_top = 243.0
+offset_left = -80.0
+offset_top = 267.0
 offset_right = -12.0
-offset_bottom = 283.0
-text = "Wireframe"
+offset_bottom = 313.0
+custom_minimum_size = Vector2(68, 46)
+theme_override_styles/normal = SubResource("NavigationStyle")
+theme_override_styles/hover = SubResource("NavigationHoverStyle")
+theme_override_styles/pressed = SubResource("PressedStyle")
+theme_override_icons/checked = ExtResource("5_toggle_on")
+theme_override_icons/unchecked = ExtResource("6_toggle_off")
+theme_override_colors/font_pressed_color = Color(0.98, 0.68, 0.075, 1)
 
 [node name="LBA2Palette" type="OptionButton" parent="Screen"]
 layout_mode = 1
@@ -160,6 +294,9 @@ popup/item_10/id = 36
 popup/item_11/text = "Ascenseur"
 popup/item_11/id = 37
 tooltip_text = "LBA2 scene palette. Bodies can appear in different locations and weather."
+theme_override_colors/font_color = Color(0.98, 0.68, 0.075, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="AnimationPanel" type="PanelContainer" parent="Screen"]
 layout_mode = 1
@@ -167,6 +304,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_top = -48.0
+theme_override_styles/panel = SubResource("BottomBarStyle")
 
 [node name="AnimationRow" type="HBoxContainer" parent="Screen/AnimationPanel"]
 layout_mode = 2
@@ -178,10 +316,15 @@ text = "Animation"
 [node name="AnimationList" type="OptionButton" parent="Screen/AnimationPanel/AnimationRow"]
 layout_mode = 2
 custom_minimum_size = Vector2(210, 0)
+theme_override_colors/font_color = Color(0.98, 0.68, 0.075, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="PlayButton" type="Button" parent="Screen/AnimationPanel/AnimationRow"]
 layout_mode = 2
 text = "Play"
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="SpeedList" type="OptionButton" parent="Screen/AnimationPanel/AnimationRow"]
 layout_mode = 2
@@ -193,12 +336,19 @@ popup/item_1/text = "1×"
 popup/item_1/id = 1
 popup/item_2/text = "2×"
 popup/item_2/id = 2
+theme_override_colors/font_color = Color(0.98, 0.68, 0.075, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
+theme_override_styles/pressed = SubResource("PressedStyle")
 
 [node name="FrameSlider" type="HSlider" parent="Screen/AnimationPanel/AnimationRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 1.0
 step = 1.0
+theme_override_icons/grabber = ExtResource("7_grabber")
+theme_override_icons/grabber_highlight = ExtResource("7_grabber")
+theme_override_styles/grabber_area = SubResource("SliderFillStyle")
+theme_override_styles/grabber_area_highlight = SubResource("SliderFillStyle")
 
 [node name="FrameLabel" type="Label" parent="Screen/AnimationPanel/AnimationRow"]
 layout_mode = 2

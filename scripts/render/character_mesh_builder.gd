@@ -174,6 +174,7 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 	var source_normals := PackedFloat32Array()
 	var texture_uvs := PackedVector2Array()
 	var texture_regions := PackedFloat32Array()
+	var rest_positions := PackedFloat32Array()
 	var is_lba2: bool = body.get("game", "LBA1") == "LBA2"
 
 	for polygon in body["polygons"]:
@@ -190,6 +191,7 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 			# LBA's projected winding is opposite Godot's front-face winding.
 			for corner in [0, triangle_index + 1, triangle_index]:
 				var vertex := points[point_indices[corner]] * UNIT_SCALE
+				var rest_position: Vector3 = body["pose_points"][point_indices[corner]] * UNIT_SCALE
 				vertex += face_normal * surface_offset
 				var texture_offset: float = body.get("appearance", {}).get("textured_surface_offset", 0.0)
 				if texture_offset > 0.0 and polygon.get("texture_handle", -1) >= 0:
@@ -219,6 +221,7 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 					texture_region = PackedFloat32Array([origin.x, origin.y, mask.x, mask.y])
 				texture_uvs.append(texture_uv)
 				texture_regions.append_array(texture_region)
+				rest_positions.append_array(PackedFloat32Array([rest_position.x, rest_position.y, rest_position.z, 0.0]))
 
 	var mesh_arrays := []
 	mesh_arrays.resize(Mesh.ARRAY_MAX)
@@ -228,9 +231,10 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 	mesh_arrays[Mesh.ARRAY_TEX_UV] = texture_uvs
 	mesh_arrays[Mesh.ARRAY_CUSTOM0] = source_normals
 	mesh_arrays[Mesh.ARRAY_CUSTOM1] = texture_regions
+	mesh_arrays[Mesh.ARRAY_CUSTOM2] = rest_positions
 	var mesh := ArrayMesh.new()
 	if not vertices.is_empty():
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_arrays, [], {}, (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT))
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_arrays, [], {}, (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT) | (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT))
 	return mesh
 
 

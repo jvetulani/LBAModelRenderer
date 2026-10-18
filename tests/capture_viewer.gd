@@ -15,7 +15,7 @@ func _capture() -> void:
 	var hide_glass := false
 	var hide_opaque := false
 	var hide_platform := false
-	var dither_mode := 2
+	var dither_mode := 4
 	var animation_index := -1
 	var animation_frame := -1
 	var palette_index := -1
@@ -48,6 +48,10 @@ func _capture() -> void:
 			dither_mode = 0
 		elif argument == "--dither=source":
 			dither_mode = 1
+		elif argument == "--dither=strong":
+			dither_mode = 2
+		elif argument == "--dither=soft":
+			dither_mode = 4
 		elif argument == "--shading=smooth":
 			dither_mode = 3
 		elif argument.begins_with("--anim-index="):

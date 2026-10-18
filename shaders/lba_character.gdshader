@@ -11,8 +11,8 @@ uniform int palette_index_override = -1;
 uniform bool use_mesh_lighting = false;
 uniform float mesh_light_span = 7.0;
 // 0 = palette bands, 1 = source MAT_DITHER faces (diagnostic),
-// 2 = LBA-style dithered shading, 3 = smooth palette interpolation.
-uniform int dither_mode = 2;
+// 2 = strong screen dither, 3 = smooth, 4 = soft model-anchored dither.
+uniform int dither_mode = 4;
 uniform float dither_pixel_scale = 1.0;
 uniform bool platform_style = false;
 // Approximate integer vector from LBA1 SetLightVector(896, 950, 0): a
@@ -27,6 +27,7 @@ varying vec3 pixel_source_normal;
 varying float pixel_light_scale;
 varying float platform_height;
 varying flat vec4 texture_region;
+varying vec3 dither_anchor;
 
 float dither_hash(vec2 coordinate) {
 	return fract(sin(dot(coordinate, vec2(127.1, 311.7))) * 43758.5453);
@@ -34,6 +35,27 @@ float dither_hash(vec2 coordinate) {
 
 float aperiodic_threshold(vec2 screen_pixel) {
 	return dither_hash(floor(screen_pixel / max(dither_pixel_scale, 1.0)));
+}
+
+vec2 anchored_dither_coord() {
+	vec3 face_axis = abs(cross(dFdx(dither_anchor), dFdy(dither_anchor)));
+	if (face_axis.x > face_axis.y && face_axis.x > face_axis.z) {
+		return dither_anchor.yz * 256.0;
+	}
+	if (face_axis.y > face_axis.z) {
+		return dither_anchor.xz * 256.0;
+	}
+	return dither_anchor.xy * 256.0;
+}
+
+float anchored_dither_threshold(vec2 coord) {
+	vec2 cell = floor(coord);
+	return fract(52.9829189 * fract(dot(cell, vec2(0.06711056, 0.00583715))));
+}
+
+float anchored_dither_weight(vec2 coord) {
+	float footprint = max(length(dFdx(coord)), length(dFdy(coord)));
+	return 0.28 * (1.0 - smoothstep(0.75, 1.5, footprint));
 }
 
 float varied_bayer_threshold(vec2 screen_pixel, float cell) {
@@ -54,6 +76,7 @@ float varied_bayer_threshold(vec2 screen_pixel, float cell) {
 
 void vertex() {
 	texture_region = CUSTOM1;
+	dither_anchor = CUSTOM2.xyz;
 	platform_height = clamp((VERTEX.y + 0.06) / 0.12, 0.0, 1.0);
 	float base_index = palette_index_override >= 0
 		? float(palette_index_override)
@@ -84,17 +107,32 @@ void fragment() {
 		// compact LBA1-style polygons. The page remains indexed and unfiltered.
 		vec2 atlas_pixel = mod(texture_region.xy + mod(floor(UV), texture_region.zw + vec2(1.0)), vec2(256.0));
 		float texel = floor(texture(texture_atlas, (atlas_pixel + vec2(0.5)) / 256.0).r * 255.0 + 0.5);
+		float original_texel = texel;
+		vec3 shaded_color = vec3(0.0);
+		bool soft_shade = has_shade_table && dither_mode == 4;
 		if (has_shade_table) {
 			float lighting = length(pixel_source_normal) > 0.0
 				? clamp(source_palette_index - source_base_index, 0.0, 15.0)
 				: normal_light_level;
-			float row = floor(lighting + 0.5);
+			float row = soft_shade || dither_mode == 3 ? floor(lighting) : floor(lighting + 0.5);
 			if (dither_mode == 2) {
 				row = floor(lighting) + (fract(lighting) > aperiodic_threshold(FRAGCOORD.xy) ? 1.0 : 0.0);
 			}
 			texel = floor(texture(shade_table, vec2((texel + 0.5) / 256.0, (row + 0.5) / 256.0)).r * 255.0 + 0.5);
+			if (soft_shade || dither_mode == 3) {
+				float next_index = floor(texture(shade_table, vec2((original_texel + 0.5) / 256.0, (min(row + 1.0, 15.0) + 0.5) / 256.0)).r * 255.0 + 0.5);
+				vec3 lower_color = texture(palette_texture, vec2((texel + 0.5) / 256.0, 0.5)).rgb;
+				vec3 upper_color = texture(palette_texture, vec2((next_index + 0.5) / 256.0, 0.5)).rgb;
+				float fraction = fract(lighting);
+				shaded_color = mix(lower_color, upper_color, fraction);
+				if (soft_shade) {
+					vec2 coord = anchored_dither_coord();
+					vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
+					shaded_color = mix(shaded_color, stepped_color, anchored_dither_weight(coord));
+				}
+			}
 		}
-		ALBEDO = texture(palette_texture, vec2((texel + 0.5) / 256.0, 0.5)).rgb;
+		ALBEDO = has_shade_table && (dither_mode == 3 || dither_mode == 4) ? shaded_color : texture(palette_texture, vec2((texel + 0.5) / 256.0, 0.5)).rgb;
 		ROUGHNESS = 1.0;
 	} else if (platform_style) {
 		float lit = max(dot(normalize(pixel_source_normal), normalize(source_light_vector)), 0.0);
@@ -102,7 +140,7 @@ void fragment() {
 		if (pixel_source_normal.y > 0.7) {
 			level = 0.96;
 		}
-		if (dither_mode != 3) {
+		if (dither_mode != 3 && dither_mode != 4) {
 			float steps = level * 8.0;
 			float threshold = 0.5;
 			if (dither_mode == 2) {
@@ -112,14 +150,20 @@ void fragment() {
 		}
 		ALBEDO = mix(vec3(0.42, 0.15, 0.015), vec3(0.98, 0.68, 0.075), level);
 		ROUGHNESS = 1.0;
-	} else if (dither_mode == 3 && source_render_type >= 7.0) {
+	} else if ((dither_mode == 3 || dither_mode == 4) && source_render_type >= 7.0) {
 		float pixel_shade = max(dot(normalize(pixel_source_normal), source_light_vector), 0.0) * pixel_light_scale;
-		float smooth_index = mod(source_base_index + pixel_shade, 256.0);
+		float smooth_index = dither_mode == 3 ? mod(source_base_index + pixel_shade, 256.0) : mod(source_palette_index, 256.0);
 		float lower_index = floor(smooth_index);
 		float upper_index = mod(lower_index + 1.0, 256.0);
 		vec3 lower_color = texture(palette_texture, vec2((lower_index + 0.5) / 256.0, 0.5)).rgb;
 		vec3 upper_color = texture(palette_texture, vec2((upper_index + 0.5) / 256.0, 0.5)).rgb;
-		ALBEDO = mix(lower_color, upper_color, fract(smooth_index));
+		float fraction = fract(smooth_index);
+		ALBEDO = mix(lower_color, upper_color, fraction);
+		if (dither_mode == 4) {
+			vec2 coord = anchored_dither_coord();
+			vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
+			ALBEDO = mix(ALBEDO, stepped_color, anchored_dither_weight(coord));
+		}
 		ROUGHNESS = 1.0;
 	} else {
 		bool dither_face = (dither_mode == 1 && source_render_type >= 10.0)

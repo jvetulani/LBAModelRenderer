@@ -15,6 +15,7 @@ func _run() -> void:
 		return
 	var main: Node3D = load("res://assets/scenes/main.tscn").instantiate()
 	root.add_child(main)
+	main._load_source(source, 0)
 	main._load_source(source, 17)
 	var platform: DisplayPlatform = main.get_node("DisplayBlock")
 	if absf(platform.position.y + 0.525) > 0.0001:
@@ -26,8 +27,8 @@ func _run() -> void:
 		_fail("Display platform did not receive the LBA1 palette and selected index")
 		return
 	var ui: MainUI = main.get_node("MainUI")
-	if ui.dither_mode.get_selected_id() != 2:
-		_fail("Dithered model is not the default shading choice")
+	if ui.dither_mode.get_selected_id() != 4:
+		_fail("Soft dither is not the default shading choice")
 		return
 	ui.dither_changed.emit(3)
 	var viewer: CharacterViewer = main.get_node("CharacterViewer")
@@ -35,9 +36,9 @@ func _run() -> void:
 	if platform_material.get_shader_parameter("dither_mode") != 3 or character_material.get_shader_parameter("dither_mode") != 3:
 		_fail("Modern smooth did not reach both the platform and character")
 		return
-	ui.dither_changed.emit(2)
-	if platform_material.get_shader_parameter("dither_mode") != 2:
-		_fail("Dithered mode did not restore the platform shading")
+	ui.dither_changed.emit(4)
+	if platform_material.get_shader_parameter("dither_mode") != 4 or character_material.get_shader_parameter("dither_mode") != 4:
+		_fail("Soft dither did not restore the platform and character shading")
 		return
 	var exporter: ExportController = main.get_node("ExportController")
 	exporter._export("glb", "/tmp/lba1-ui-grobo.glb")
@@ -45,7 +46,7 @@ func _run() -> void:
 		_fail("UI controller did not save GLB: %s" % ui.status_label.text)
 		return
 	exporter._export("blend", "/tmp/lba1-ui-grobo.blend")
-	if not FileAccess.file_exists("/tmp/lba1-ui-grobo.blend"):
+	if not FileAccess.file_exists("/tmp/lba1-ui-grobo.blend") or not ui.status_label.text.begins_with("Saved /tmp/lba1-ui-grobo.blend"):
 		_fail("UI controller did not save Blender file: %s" % ui.status_label.text)
 		return
 	print("PASS: UI exported GLB and Blender file; %s" % ui.status_label.text)
