@@ -9,6 +9,8 @@
     "306": {"effect": "fireball_glow", "opacity": 0.58},
     "315": {"effect": "chroma_spectral", "opacity": 0.42},
     "394": {"reverse_shade_strength": 0.12},
-    "406": {"reverse_shade_strength": 0.4}
+    "406": {"reverse_shade_strength": 0.4},
+    "457": {"effect": "chroma_spectral", "opacity": 0.42},
+    "458": {"effect": "chroma_spectral", "opacity": 0.42}
   }
 }

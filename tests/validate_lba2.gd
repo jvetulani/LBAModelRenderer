@@ -94,6 +94,12 @@ func _init() -> void:
 	assert(funfrock_loaded["ok"] and LBA2_APPEARANCE.uses_spectral_preview(viewer.body))
 	var funfrock_material: ShaderMaterial = viewer.character.get_node("Polygons").material_override
 	assert(funfrock_material.next_pass != null, "Teleporting FunFrock must fill chroma holes")
+	for spell_index in [457, 458]:
+		var spell_loaded := viewer.load_body(path, spell_index)
+		assert(spell_loaded["ok"] and LBA2_APPEARANCE.uses_spectral_preview(viewer.body))
+		assert(viewer.character.get_node("Polygons").material_override.next_pass != null, "Spell %d must fill chroma holes" % spell_index)
+		var spell_export := LBA1GLBExporter.build(viewer.export_input())
+		assert(spell_export["ok"], "Spell %d GLB export failed" % spell_index)
 	assert(viewer.load_body(path, 112)["ok"])
 	var spectral_export := LBA1GLBExporter.build(viewer.export_input())
 	assert(spectral_export["ok"])
