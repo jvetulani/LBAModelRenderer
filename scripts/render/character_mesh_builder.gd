@@ -11,14 +11,14 @@ const LBA2_APPEARANCE := preload("res://scripts/render/lba2_appearance.gd")
 const WIREFRAME_SHADER := preload("res://shaders/wireframe_overlay.gdshader")
 
 
-static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray) -> Node3D:
+static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray, atlas_override: Texture2D = null) -> Node3D:
 	var character := Node3D.new()
 	character.name = "%sBody" % body.get("game", "LBA1")
 	var is_lba2: bool = body.get("game", "LBA1") == "LBA2"
 	var palette_texture := _make_palette_texture(palette_bytes, is_lba2 or body.get("game", "") == "LBA2-96")
-	var atlas_texture: Texture2D = null
+	var atlas_texture: Texture2D = atlas_override
 	var shade_texture: Texture2D = null
-	if body.has("texture_atlas"):
+	if atlas_texture == null and body.has("texture_atlas"):
 		atlas_texture = ImageTexture.create_from_image(Image.create_from_data(256, 256, false, Image.FORMAT_R8, body["texture_atlas"]))
 	if body.has("shade_table"):
 		shade_texture = ImageTexture.create_from_image(Image.create_from_data(256, 256, false, Image.FORMAT_R8, body["shade_table"]))

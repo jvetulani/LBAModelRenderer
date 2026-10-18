@@ -8,6 +8,7 @@ const LBA2_POSE = preload("res://scripts/animation/lba2_pose.gd")
 const LBA1_SAIL_REPAIR = preload("res://scripts/animation/lba1_sail_repair.gd")
 const MOTION_GRID_SHADER = preload("res://shaders/motion_grid.gdshader")
 const LBA2_OVERRIDES = preload("res://scripts/render/lba2_model_overrides.gd")
+const LBA2_ANIMATED_ATLAS = preload("res://scripts/render/lba2_animated_texture_atlas.gd")
 
 signal playback_frame_changed(frame_index: int, frame_count: int, duration_ticks: int)
 signal playback_ended
@@ -37,6 +38,7 @@ var _current_frame := 0
 var _phase_ticks := 0.0
 var _finished_one_shot := false
 var _master_rotation_offset := Vector3.ZERO
+var _animated_atlas: RefCounted
 
 
 func load_body(directory: String, body_index: int) -> Dictionary:
@@ -98,6 +100,7 @@ func _load_body(body_index: int) -> Dictionary:
 		return decoded
 	if is_lba2:
 		decoded["appearance"] = LBA2_OVERRIDES.for_retail_body(body_index)
+		LBA2_OVERRIDES.apply_geometry(decoded)
 		decoded["shade_table"] = palette_data["shade_table"]
 		decoded["normal_light_level"] = palette_data["normal_level"]
 		var atlas := _read_entry("RESS.HQR", 6)
@@ -132,13 +135,14 @@ func _load_body(body_index: int) -> Dictionary:
 	_body_index = body_index
 	_shadow_sprite = {}
 	body = decoded
+	_animated_atlas = LBA2_ANIMATED_ATLAS.new(body["texture_atlas"]) if is_lba2 else null
 	animation = {}
 	playing = false
 	_current_frame = 0
 	_phase_ticks = 0.0
 	_finished_one_shot = false
 	_master_rotation_offset = Vector3.ZERO
-	character = CharacterMeshBuilder.build_static_pose(body, _palette)
+	character = CharacterMeshBuilder.build_static_pose(body, _palette, _animated_atlas.texture if _animated_atlas != null else null)
 	character.get_node("Wireframe").visible = _wireframe_enabled
 	var polygon_material: ShaderMaterial = character.get_node("Polygons").material_override
 	palette_texture_ready.emit(polygon_material.get_shader_parameter("palette_texture"))
@@ -178,7 +182,7 @@ func select_lba2_palette(index: int) -> Dictionary:
 	var previous_position := character.position
 	remove_child(character)
 	character.queue_free()
-	character = CharacterMeshBuilder.build_static_pose(body, _palette)
+	character = CharacterMeshBuilder.build_static_pose(body, _palette, _animated_atlas.texture if _animated_atlas != null else null)
 	character.get_node("Wireframe").visible = _wireframe_enabled
 	character.position = previous_position
 	add_child(character)
@@ -388,7 +392,10 @@ func export_input() -> Dictionary:
 		if not decoded["ok"]:
 			return {"ok": false, "error": "ANIM #%d: %s" % [entry["archive_index"], decoded["error"]]}
 		clips.append({"archive_index": entry["archive_index"], "name": entry["name"], "animation": decoded})
-	return {"ok": true, "body": body, "palette": _palette, "shadow": _shadow_sprite if _shadow_enabled else {}, "clips": clips, "game": game}
+	var export_body := body.duplicate()
+	if _animated_atlas != null:
+		export_body["texture_atlas"] = _animated_atlas.pixels()
+	return {"ok": true, "body": export_body, "palette": _palette, "shadow": _shadow_sprite if _shadow_enabled else {}, "clips": clips, "game": game}
 
 
 func _decode_animation(archive_index: int, bytes: PackedByteArray) -> Dictionary:
@@ -440,6 +447,8 @@ func scrub_to(frame_index: int) -> void:
 
 
 func _process(delta: float) -> void:
+	if _animated_atlas != null:
+		_animated_atlas.advance(delta)
 	if not playing or animation.is_empty():
 		return
 	if animation["frame_count"] == 1:

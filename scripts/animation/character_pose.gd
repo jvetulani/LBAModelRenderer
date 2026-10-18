@@ -11,6 +11,7 @@ static func sample(body: Dictionary, animation: Dictionary, source_frame: int, t
 	var groups: Array = body["groups"]
 	var half_turn := angle_units * 0.5
 	var raw_points: PackedVector3Array = body["points"]
+	var translation_limits: Dictionary = body.get("appearance", {}).get("group_translation_limits", {})
 	var points := raw_points.duplicate()
 	var bases: Array[Basis] = []
 	for group_index in range(groups.size()):
@@ -32,6 +33,8 @@ static func sample(body: Dictionary, animation: Dictionary, source_frame: int, t
 				values[axis] = start + difference * weight
 			else:
 				values[axis] = lerpf(start, end, weight)
+		if transform_type == 1 and translation_limits.has(str(group_index)):
+			values = values.limit_length(float(translation_limits[str(group_index)]))
 		var local_basis := Basis.IDENTITY
 		if transform_type == 0 and group_index > 0:
 			var angle_scale := TAU / angle_units

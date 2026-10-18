@@ -19,6 +19,7 @@ signal wireframe_visible_changed(visible: bool)
 signal motion_grid_visible_changed(visible: bool)
 signal lba2_palette_selected(index: int)
 signal share_requested
+signal embed_share_requested
 
 @onready var source_field: LineEdit = $Screen/TopPanel/Vertical/SourceRow/SourceField
 @onready var body_number: LineEdit = $Screen/TopPanel/Vertical/SourceRow/BodyNumber
@@ -34,6 +35,7 @@ signal share_requested
 @onready var browse_button: Button = $Screen/TopPanel/Vertical/SourceRow/BrowseButton
 @onready var blender_button: Button = $Screen/TopPanel/Vertical/SourceRow/ExportBlenderButton
 @onready var copy_link_button: Button = $Screen/TopPanel/Vertical/SourceRow/CopyLinkButton
+@onready var copy_embed_button: Button = $Screen/TopPanel/Vertical/SourceRow/CopyEmbedButton
 @onready var palette_list: OptionButton = $Screen/LBA2Palette
 @onready var shadow_toggle: CheckButton = $Screen/ShadowToggle
 @onready var shadow_label: Label = $Screen/ShadowLabel
@@ -74,6 +76,7 @@ func _ready() -> void:
 	$Screen/TopPanel/Vertical/SourceRow/ExportGLBButton.pressed.connect(func() -> void: _request_export("glb"))
 	blender_button.pressed.connect(func() -> void: _request_export("blend"))
 	copy_link_button.pressed.connect(func() -> void: share_requested.emit())
+	copy_embed_button.pressed.connect(func() -> void: embed_share_requested.emit())
 	export_dialog.file_selected.connect(func(path: String) -> void: export_requested.emit(_pending_export, path))
 	folder_dialog.dir_selected.connect(func(path: String) -> void:
 		source_field.text = path
@@ -100,6 +103,7 @@ func _ready() -> void:
 		blender_button.hide()
 	else:
 		copy_link_button.hide()
+		copy_embed_button.hide()
 	set_game("LBA1")
 	set_shadow_available(false)
 
@@ -159,6 +163,7 @@ func set_body_entry_count(count: int) -> void:
 
 func set_share_available(available: bool) -> void:
 	copy_link_button.disabled = not available
+	copy_embed_button.disabled = not available
 
 
 func request_load() -> void:

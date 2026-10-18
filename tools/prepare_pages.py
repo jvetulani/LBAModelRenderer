@@ -97,6 +97,27 @@ def main() -> None:
     config["mainPack"] = pack_name
     html = html[: match.start(1)] + json.dumps(config, separators=(",", ":")) + html[match.end(1) :]
     html = add_loading_brand(html)
+    # Godot creates the WebGL context after loading index.js. Keep the canvas
+    # alpha channel when a host page requests a transparent model embed.
+    transparent_embed = """<script>
+if (new URL(location.href).searchParams.get('transparent') === '1') {
+    document.documentElement.style.background = 'transparent';
+    document.body.style.background = 'transparent';
+    const canvas = document.getElementById('canvas');
+    if (canvas) canvas.style.background = 'transparent';
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, attributes) {
+        if (this.id === 'canvas' && (type === 'webgl' || type === 'webgl2')) {
+            attributes = {...attributes, alpha: true};
+        }
+        return originalGetContext.call(this, type, attributes);
+    };
+}
+</script>
+"""
+    if '<script src="index.js"></script>' not in html:
+        raise SystemExit("Could not find Godot's script in index.html")
+    html = html.replace('<script src="index.js"></script>', transparent_embed + '<script src="index.js"></script>', 1)
     (destination / "index.html").write_text(html, encoding="utf-8")
     # GitHub Pages serves this for /link=<encoded-url>, allowing path-style links.
     (destination / "404.html").write_text(html, encoding="utf-8")

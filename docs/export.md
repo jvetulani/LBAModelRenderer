@@ -6,6 +6,8 @@ The viewer exports the loaded **LBA1, LBA2, or 1996 LBA2 demo** body and its ass
 
 On desktop, choose **Export GLB** or **Export Blender** after loading a character. The Blender button runs an installed `blender` executable; set `LBA_BLENDER` to a different executable path if needed. On the web, choose an LBA1 or LBA2 game folder containing BODY.HQR, ANIM.HQR and RESS.HQR; FILE3D.HQR is also needed for LBA1 and the 1996 LBA2 demo. Then use **Export GLB**. The archives stay in browser memory and are not sent to the host. The hosted viewer is at https://jvetulani.github.io/LBAModelRenderer/.
 
+The LBA2 fire and plasma textures animate in the preview. GLB and Blender exports currently contain the visible texture frame at export time; the texture does not animate after export.
+
 Portable Windows and Linux builds, with setup instructions, are described in [desktop_builds.md](desktop_builds.md).
 
 For a Pages release, run `python3 tools/prepare_pages.py WEB_EXPORT_DIR EMPTY_OUTPUT_DIR` after the Godot web export, then publish the prepared directory at the root of `gh-pages`. The script gives the `.pck` a content-based filename so a browser cannot reuse an older cached game pack after the page updates.

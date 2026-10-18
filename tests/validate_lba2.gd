@@ -5,6 +5,8 @@ const FILE3D_DECODER = preload("res://scripts/import/lba2_file3d_decoder.gd")
 const PALETTE_DECODER = preload("res://scripts/import/lba2_palette_decoder.gd")
 const LBA2_APPEARANCE = preload("res://scripts/render/lba2_appearance.gd")
 const LBA2_OVERRIDES = preload("res://scripts/render/lba2_model_overrides.gd")
+const ANIMATED_ATLAS = preload("res://scripts/render/lba2_animated_texture_atlas.gd")
+const LBA2_POSE = preload("res://scripts/animation/lba2_pose.gd")
 
 func _init() -> void:
 	var path := "/home/asia/Games/LBA2gog"
@@ -17,6 +19,12 @@ func _init() -> void:
 	assert(decoded["ok"], str(decoded.get("error", "BODY.HQR entry 0 decode failed")))
 	assert(decoded["points"].size() == 193)
 	assert(decoded["polygons"].size() == 281)
+	decoded["appearance"] = LBA2_OVERRIDES.for_retail_body(0)
+	LBA2_OVERRIDES.apply_geometry(decoded)
+	var shirt_faces: Array = decoded["polygons"]
+	assert(shirt_faces[233]["texture_uvs"][1].is_equal_approx(shirt_faces[232]["texture_uvs"][2]))
+	assert(shirt_faces[237]["texture_uvs"][1].is_equal_approx(shirt_faces[233]["texture_uvs"][2]))
+	assert(shirt_faces[279]["texture_uvs"][3].is_equal_approx(shirt_faces[232]["texture_uvs"][1]))
 	var xpl_entry := HQRReader.read_entry(path.path_join("RESS.HQR"), 27)
 	assert(xpl_entry["ok"])
 	var xpl := PALETTE_DECODER.decode(xpl_entry["data"])
@@ -84,6 +92,14 @@ func _init() -> void:
 		assert(effect_body["ok"] and LBA2_APPEARANCE.has_translucent_faces(effect_body))
 		assert(effect_body["polygons"].any(func(polygon: Dictionary) -> bool: return LBA2_APPEARANCE.is_translucent_face(effect_body, polygon)))
 	assert(not LBA2_APPEARANCE.has_translucent_faces(decoded))
+	var chest_body: Dictionary = BODY_DECODER.decode(HQRReader.read_entry(path.path_join("BODY.HQR"), 329)["data"])
+	var chest_animation: Dictionary = LBA1AnimationDecoder.decode(HQRReader.read_entry(path.path_join("ANIM.HQR"), 1489)["data"])
+	assert(chest_body["ok"] and chest_animation["ok"])
+	var original_chest: Dictionary = LBA2_POSE.sample(chest_body, chest_animation, 4, 4, 0.0)
+	chest_body["appearance"] = LBA2_OVERRIDES.for_retail_body(329)
+	var repaired_chest: Dictionary = LBA2_POSE.sample(chest_body, chest_animation, 4, 4, 0.0)
+	assert(original_chest["points"][199].distance_to(repaired_chest["points"][199]) > 100.0)
+	assert(original_chest["points"][200].is_equal_approx(repaired_chest["points"][200]), "BODY #329 repair must only affect the stray point")
 	var glass_loaded := viewer.load_body(path, 106)
 	assert(glass_loaded["ok"] and viewer.character.has_node("TranslucentPolygons"))
 	var glass_export := LBA1GLBExporter.build(viewer.export_input())
@@ -94,6 +110,37 @@ func _init() -> void:
 	assert(funfrock_loaded["ok"] and LBA2_APPEARANCE.uses_spectral_preview(viewer.body))
 	var funfrock_material: ShaderMaterial = viewer.character.get_node("Polygons").material_override
 	assert(funfrock_material.next_pass != null, "Teleporting FunFrock must fill chroma holes")
+	var atlas_entry := HQRReader.read_entry(path.path_join("RESS.HQR"), 6)
+	assert(atlas_entry["ok"])
+	var animated_atlas := ANIMATED_ATLAS.new(atlas_entry["data"])
+	assert(animated_atlas.frame_count() == 96)
+	var first_atlas: PackedByteArray = animated_atlas.pixels()
+	animated_atlas.advance(0.08)
+	var next_atlas: PackedByteArray = animated_atlas.pixels()
+	var fire_coverage := 0
+	var plasma_coverage := 0
+	var animated_pixels := 0
+	for y in range(32, 64):
+		for x in range(32, 64):
+			fire_coverage += int(first_atlas[y * 256 + x] != 0)
+			animated_pixels += int(first_atlas[y * 256 + x] != next_atlas[y * 256 + x])
+		for x in range(32):
+			plasma_coverage += int(first_atlas[y * 256 + x] != 0)
+	assert(fire_coverage > 100 and plasma_coverage > 100 and animated_pixels > 0, "Atlas fire and plasma must render and animate")
+	assert(first_atlas[200 * 256 + 200] == next_atlas[200 * 256 + 200], "Static atlas pixels must remain unchanged")
+	for y in range(101, 128):
+		for x in range(193, 224):
+			var shirt_pixel := y * 256 + x
+			assert(first_atlas[shirt_pixel] == atlas_entry["data"][shirt_pixel] and next_atlas[shirt_pixel] == atlas_entry["data"][shirt_pixel], "Animated effects must not alter Twinsen's shirt texture")
+	assert(viewer.load_body(path, 399)["ok"])
+	var fire_export := viewer.export_input()
+	var exported_fire_atlas: PackedByteArray = fire_export["body"]["texture_atlas"]
+	var visible_fire_pixels := 0
+	for y in range(32, 64):
+		for x in range(32, 64):
+			visible_fire_pixels += int(exported_fire_atlas[y * 256 + x] != 0)
+	assert(visible_fire_pixels > 100, "BODY #399 GLB must receive a visible fire frame")
+	assert(LBA1GLBExporter.build(fire_export)["ok"])
 	for spell_index in [457, 458]:
 		var spell_loaded := viewer.load_body(path, spell_index)
 		assert(spell_loaded["ok"] and LBA2_APPEARANCE.uses_spectral_preview(viewer.body))

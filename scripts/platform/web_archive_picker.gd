@@ -20,7 +20,7 @@ func _ready() -> void:
 	_share_callback = JavaScriptBridge.create_callback(_on_share_result)
 	JavaScriptBridge.get_interface("window").lbaShareCallback = _share_callback
 	JavaScriptBridge.eval("""
-		window.lbaCopyLink = async function (source, body, animation) {
+		window.lbaCopyLink = async function (source, body, animation, embed) {
 			const link = new URL(window.location.href);
 			link.pathname = link.pathname.replace(/link=[^/]+\\/?$/, '');
 			link.search = '';
@@ -28,6 +28,7 @@ func _ready() -> void:
 			link.searchParams.set('link', source);
 			link.searchParams.set('body', String(body));
 			if (animation >= 0) link.searchParams.set('anim', String(animation));
+			if (embed) link.searchParams.set('embed', '1');
 			try {
 				await navigator.clipboard.writeText(link.href);
 				window.lbaShareCallback('Link copied to clipboard.');
@@ -89,8 +90,12 @@ func _ready() -> void:
 					if (!response.ok) throw new Error(name + ': HTTP ' + response.status);
 					await window.lbaReadArchive(name, path, await response.arrayBuffer());
 				}
+			// Retail LBA2 does not have FILE3D.HQR. A missing optional file may
+			// reject at the CORS layer instead of returning an HTTP 404.
+			try {
 				const optional = await fetch(new URL('FILE3D.HQR', base));
 				if (optional.ok) await window.lbaReadArchive('FILE3D.HQR', path, await optional.arrayBuffer());
+			} catch (_) {}
 				window.lbaArchivesCallback(JSON.stringify({complete: true, folder: path}));
 			} catch (error) {
 				window.lbaArchivesCallback(JSON.stringify({error: String(error)}));
@@ -117,11 +122,11 @@ func load_url(url: String) -> void:
 	JavaScriptBridge.eval("window.lbaFetchArchives(%s)" % JSON.stringify(url))
 
 
-func copy_deep_link(source: String, body_index: int, animation_index: int) -> void:
+func copy_deep_link(source: String, body_index: int, animation_index: int, embed: bool = false) -> void:
 	if not OS.has_feature("web"):
 		share_finished.emit("Share links are only available on the web build.")
 		return
-	JavaScriptBridge.eval("window.lbaCopyLink(%s, %d, %d)" % [JSON.stringify(source), body_index, animation_index])
+	JavaScriptBridge.eval("window.lbaCopyLink(%s, %d, %d, %s)" % [JSON.stringify(source), body_index, animation_index, "true" if embed else "false"])
 
 
 func _on_share_result(arguments: Array) -> void:

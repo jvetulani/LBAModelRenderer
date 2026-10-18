@@ -11,6 +11,8 @@ var _web_archives: Dictionary = {}
 var _active_source := ""
 var _pending_remote_body := 0
 var _pending_animation := -1
+var _embed_mode := false
+var _transparent_mode := false
 
 
 func _ready() -> void:
@@ -18,9 +20,10 @@ func _ready() -> void:
 	ui.load_requested.connect(_load_source)
 	ui.archive_files_requested.connect(web_picker.pick)
 	web_picker.archives_ready.connect(_on_archives_ready)
-	web_picker.failed.connect(ui.set_status)
+	web_picker.failed.connect(_on_web_load_failed)
 	web_picker.share_finished.connect(ui.set_status)
 	ui.share_requested.connect(_copy_link)
+	ui.embed_share_requested.connect(_copy_embed_link)
 	ui.dither_changed.connect(viewer.set_dither_mode)
 	ui.dither_changed.connect(display_platform.set_dither_mode)
 	ui.platform_visible_changed.connect(func(visible: bool) -> void: display_platform.visible = visible)
@@ -50,14 +53,25 @@ func _ready() -> void:
 				return JSON.stringify({
 					link: page.searchParams.get('link') || (pathValue ? decodeURIComponent(pathValue.slice(5)) : ''),
 					body: page.searchParams.get('body') || '0',
-					anim: page.searchParams.get('anim') || '-1'
+					anim: page.searchParams.get('anim') || '-1',
+					embed: page.searchParams.get('embed') === '1' || page.searchParams.get('ui') === '0',
+					transparent: page.searchParams.get('transparent') === '1'
 				});
 			})()
 		""")))
-		if deep_link is Dictionary and not str(deep_link.get("link", "")).is_empty():
-			directory = str(deep_link["link"])
-			body_index = maxi(0, int(deep_link.get("body", "0")))
-			_pending_animation = int(deep_link.get("anim", "-1"))
+		if deep_link is Dictionary:
+			_embed_mode = bool(deep_link.get("embed", false))
+			_transparent_mode = bool(deep_link.get("transparent", false))
+			if not str(deep_link.get("link", "")).is_empty():
+				directory = str(deep_link["link"])
+				body_index = maxi(0, int(deep_link.get("body", "0")))
+				_pending_animation = int(deep_link.get("anim", "-1"))
+				if _embed_mode:
+					ui.visible = false
+					display_platform.visible = false
+					viewer.set_motion_grid_visible(false)
+				if _transparent_mode:
+					_enable_transparent_background()
 	ui.set_source(directory, body_index)
 	if not directory.is_empty():
 		_active_source = directory
@@ -83,7 +97,7 @@ func _load_source(directory: String, body_index: int) -> void:
 	var result := viewer.load_archives(_web_archives, body_index) if OS.has_feature("web") else viewer.load_body(directory, body_index)
 	if not result["ok"]:
 		ui.set_share_available(false)
-		ui.set_status(result["error"])
+		_on_web_load_failed(result["error"])
 		return
 	_active_source = directory
 	ui.set_body_entry_count(result["entry_count"])
@@ -100,6 +114,23 @@ func _load_source(directory: String, body_index: int) -> void:
 	_pending_animation = -1
 	if animation_id >= 0:
 		_select_animation(animation_id)
+	if _embed_mode:
+		ui.visible = false
+		display_platform.visible = false
+
+
+func _enable_transparent_background() -> void:
+	get_viewport().transparent_bg = true
+	var stage_environment: WorldEnvironment = $StageEnvironment
+	stage_environment.environment = stage_environment.environment.duplicate()
+	stage_environment.environment.background_mode = Environment.BG_CLEAR_COLOR
+	JavaScriptBridge.eval("document.documentElement.style.background = 'transparent'; document.body.style.background = 'transparent'; const canvas = document.querySelector('canvas'); if (canvas) canvas.style.background = 'transparent';")
+
+
+func _on_web_load_failed(message: String) -> void:
+	if _embed_mode:
+		ui.visible = true
+	ui.set_status(message)
 
 
 func _select_lba2_palette(index: int) -> void:
@@ -125,6 +156,13 @@ func _copy_link() -> void:
 		ui.set_status("Load an HTTP or HTTPS archive folder to make a shareable link.")
 		return
 	web_picker.copy_deep_link(_active_source, ui.body_index(), ui.selected_animation_id())
+
+
+func _copy_embed_link() -> void:
+	if not OS.has_feature("web") or not (_active_source.begins_with("https://") or _active_source.begins_with("http://")):
+		ui.set_status("Load an HTTP or HTTPS archive folder to make an embed link.")
+		return
+	web_picker.copy_deep_link(_active_source, ui.body_index(), ui.selected_animation_id(), true)
 
 
 func _select_animation(archive_index: int) -> void:
