@@ -277,7 +277,22 @@ func _find_animations(body_index: int) -> Array:
 		if not file3d["ok"]:
 			return []
 		var matches: Dictionary = LBA2_FILE3D.animations_for_body(file3d["data"], body_index)
-		return matches["animations"] if matches["ok"] else []
+		if not matches["ok"]:
+			return []
+		var found: Array = matches["animations"]
+		# Several shark BODY variants share one FILE3D stream, but their actions
+		# target different skeletons. Keep the authored variant-specific actions.
+		if body.get("appearance", {}).get("matching_animation_groups", false):
+			var matching: Array = []
+			for entry in found:
+				var resource := _read_entry("ANIM.HQR", entry["archive_index"])
+				if not resource["ok"]:
+					continue
+				var decoded := LBA1AnimationDecoder.decode(resource["data"])
+				if decoded["ok"] and decoded["group_count"] == body["groups"].size():
+					matching.append(entry)
+			return matching
+		return found
 	if game == "LBA2-96":
 		var demo_found := []
 		var demo_by_archive := {}

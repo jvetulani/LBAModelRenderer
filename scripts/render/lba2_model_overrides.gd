@@ -45,4 +45,26 @@ static func apply_geometry(body: Dictionary) -> void:
 		uvs[second] = saved
 		polygon["texture_uvs"] = uvs
 		polygons[polygon_index] = polygon
+	var arm_uv_scale := float(appearance.get("arm_uv_u_scale", 1.0))
+	if arm_uv_scale != 1.0:
+		var point_groups: PackedInt32Array = body["point_groups"]
+		for polygon_index in range(polygons.size()):
+			var polygon: Dictionary = polygons[polygon_index]
+			if int(polygon.get("texture_handle", -1)) < 0:
+				continue
+			var points: PackedInt32Array = polygon["points"]
+			var positive_arm := true
+			var negative_arm := true
+			for point_index in points:
+				var group_index := point_groups[point_index]
+				positive_arm = positive_arm and group_index in [19, 20, 21]
+				negative_arm = negative_arm and group_index in [22, 23, 24]
+			if not positive_arm and not negative_arm:
+				continue
+			var center_u := 125.0 if positive_arm else 25.0
+			var uvs: PackedVector2Array = polygon["texture_uvs"]
+			for corner in range(uvs.size()):
+				uvs[corner].x = center_u + (uvs[corner].x - center_u) * arm_uv_scale
+			polygon["texture_uvs"] = uvs
+			polygons[polygon_index] = polygon
 	body["polygons"] = polygons

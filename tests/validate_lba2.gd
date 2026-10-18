@@ -132,6 +132,31 @@ func _init() -> void:
 		for x in range(193, 224):
 			var shirt_pixel := y * 256 + x
 			assert(first_atlas[shirt_pixel] == atlas_entry["data"][shirt_pixel] and next_atlas[shirt_pixel] == atlas_entry["data"][shirt_pixel], "Animated effects must not alter Twinsen's shirt texture")
+	for monkey_index in [388, 389]:
+		var monkey: Dictionary = BODY_DECODER.decode(HQRReader.read_entry(path.path_join("BODY.HQR"), monkey_index)["data"])
+		assert(monkey["ok"])
+		var narrow_face: int = 281 + monkey_index - 388
+		var original_uvs: PackedVector2Array = monkey["polygons"][narrow_face]["texture_uvs"].duplicate()
+		var unchanged_face: int = 310 + monkey_index - 388
+		var original_face_uvs: PackedVector2Array = monkey["polygons"][unchanged_face]["texture_uvs"].duplicate()
+		monkey["appearance"] = LBA2_OVERRIDES.for_retail_body(monkey_index)
+		LBA2_OVERRIDES.apply_geometry(monkey)
+		var repaired_uvs: PackedVector2Array = monkey["polygons"][narrow_face]["texture_uvs"]
+		assert(is_equal_approx(absf(repaired_uvs[0].x - repaired_uvs[1].x), absf(original_uvs[0].x - original_uvs[1].x) * 3.0), "Monkey arm UVs must cover more texture columns")
+		assert(monkey["polygons"][unchanged_face]["texture_uvs"] == original_face_uvs, "Monkey face texture must stay unchanged")
+	for shark_index in [320, 321, 322]:
+		var shark_loaded := viewer.load_body(path, shark_index)
+		assert(shark_loaded["ok"])
+		var expected_groups: int = viewer.body["groups"].size()
+		assert(not viewer.animation_entries.is_empty(), "Shark BODY #%d needs matching actions" % shark_index)
+		for action in viewer.animation_entries:
+			var action_data: Dictionary = LBA1AnimationDecoder.decode(HQRReader.read_entry(path.path_join("ANIM.HQR"), action["archive_index"])["data"])
+			assert(action_data["ok"] and action_data["group_count"] == expected_groups, "Shark BODY #%d has an action for the wrong skeleton" % shark_index)
+		assert(viewer.export_input()["clips"].size() == viewer.animation_entries.size())
+	assert(viewer.load_body(path, 320)["ok"])
+	assert(viewer.animation_entries.map(func(action: Dictionary) -> int: return action["archive_index"]) == [1480, 1487])
+	assert(viewer.load_body(path, 322)["ok"])
+	assert(viewer.animation_entries.any(func(action: Dictionary) -> bool: return action["archive_index"] == 1481))
 	assert(viewer.load_body(path, 399)["ok"])
 	var fire_export := viewer.export_input()
 	var exported_fire_atlas: PackedByteArray = fire_export["body"]["texture_atlas"]
