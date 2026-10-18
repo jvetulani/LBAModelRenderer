@@ -5,6 +5,12 @@ extends RefCounted
 # (8-byte frame header + 8 bytes per group) repeated for every keyframe.
 
 
+static func ticks_per_second(game: String) -> float:
+	# The 1996 demo kept the earlier 50 Hz duration units even though its
+	# transforms use LBA2 angles. Retail LBA2 stores millisecond durations.
+	return 1000.0 if game == "LBA2" else 50.0
+
+
 static func decode(bytes: PackedByteArray) -> Dictionary:
 	if bytes.size() < 8:
 		return _error("Animation header is truncated")

@@ -20,7 +20,9 @@ static func sample(body: Dictionary, animation: Dictionary, source_frame: int, t
 		var pivot := Vector3.ZERO if parent < 0 else points[group["pivot"]]
 		var from: Dictionary = source_transforms[group_index] if group_index < source_transforms.size() else {"type": 0, "values": Vector3i.ZERO}
 		var to: Dictionary = target_transforms[group_index] if group_index < target_transforms.size() else {"type": 0, "values": Vector3i.ZERO}
-		var transform_type: int = to["type"]
+		# Group 0 is the actor's master motion. Its type-1 values are
+		# per-frame rotation steps, unlike type-1 child-group translations.
+		var transform_type: int = 0 if group_index == 0 else to["type"]
 		var values := Vector3.ZERO
 		for axis in range(3):
 			var start := float(from["values"][axis])
@@ -31,7 +33,7 @@ static func sample(body: Dictionary, animation: Dictionary, source_frame: int, t
 			else:
 				values[axis] = lerpf(start, end, weight)
 		var local_basis := Basis.IDENTITY
-		if transform_type == 0:
+		if transform_type == 0 and group_index > 0:
 			var angle_scale := TAU / angle_units
 			local_basis = Basis(Vector3.RIGHT, values.x * angle_scale) * Basis(Vector3.BACK, values.z * angle_scale) * Basis(Vector3.UP, values.y * angle_scale)
 		var world_basis := parent_basis * local_basis
@@ -41,4 +43,17 @@ static func sample(body: Dictionary, animation: Dictionary, source_frame: int, t
 			if transform_type == 1:
 				local_point += values
 			points[point_index] = pivot + world_basis * local_point
-	return {"points": points, "bases": bases}
+	return {"points": points, "bases": bases, "master_rotation": master_rotation_units(animation, source_frame, target_frame, weight) * (TAU / angle_units)}
+
+
+static func master_rotation_units(animation: Dictionary, source_frame: int, target_frame: int, weight: float) -> Vector3:
+	var rotation := Vector3.ZERO
+	for frame_index in range(1, source_frame + 1):
+		var step: Dictionary = animation["frames"][frame_index]["transforms"][0]
+		if step["type"] == 1:
+			rotation += Vector3(step["values"])
+	if target_frame != source_frame:
+		var next_step: Dictionary = animation["frames"][target_frame]["transforms"][0]
+		if next_step["type"] == 1:
+			rotation += Vector3(next_step["values"]) * weight
+	return rotation

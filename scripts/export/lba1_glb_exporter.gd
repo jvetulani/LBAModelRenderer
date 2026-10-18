@@ -157,7 +157,7 @@ static func build(input: Dictionary) -> Dictionary:
 	player.owner = scene
 	var library := AnimationLibrary.new()
 	var angle_scale := TAU / (1024.0 if body.get("game", "LBA1") == "LBA1" else 4096.0)
-	var tick_rate := 50.0 if body.get("game", "LBA1") == "LBA1" else 1000.0
+	var tick_rate := LBA1AnimationDecoder.ticks_per_second(body.get("game", "LBA1"))
 	var exported_clips := 0
 	for clip in clips:
 		var name := _safe_name(clip["name"]) + "_ANIM_%03d" % clip["archive_index"]
@@ -374,7 +374,13 @@ static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_ind
 			var transform_data: Dictionary = transforms[group_index] if group_index < transforms.size() else {"type": 0, "values": Vector3i.ZERO}
 			var rotation := Quaternion.IDENTITY
 			var bone_position := rest_position
-			if transform_data["type"] == 0:
+			if group_index == 0:
+				# Frame group 0 drives actor master rotation; its type-1 Y value
+				# is a turn step, not an upward bone translation.
+				var master_units := CharacterPose.master_rotation_units(decoded, frame_indices[position], frame_indices[position], 1.0)
+				var basis := Basis(Vector3.RIGHT, master_units.x * angle_scale) * Basis(Vector3.BACK, master_units.z * angle_scale) * Basis(Vector3.UP, master_units.y * angle_scale)
+				rotation = basis.get_rotation_quaternion()
+			elif transform_data["type"] == 0:
 				var values: Vector3i = transform_data["values"]
 				var basis := Basis(Vector3.RIGHT, float(values.x) * angle_scale) * Basis(Vector3.BACK, float(values.z) * angle_scale) * Basis(Vector3.UP, float(values.y) * angle_scale)
 				rotation = basis.get_rotation_quaternion()

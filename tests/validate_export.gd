@@ -16,6 +16,9 @@ func _init() -> void:
 		if not loaded["ok"]:
 			_fail(loaded["error"])
 			return
+		if body_index == 0 and viewer.animation_entries.size() < 50:
+			_fail("Twinsen BODY #0 lost its shared FILE3D actions")
+			return
 		var export_result := LBA1GLBExporter.build(viewer.export_input())
 		if not export_result["ok"]:
 			_fail(export_result["error"])

@@ -52,7 +52,7 @@ float anchored_dither_threshold(vec2 coord) {
 
 float anchored_dither_weight(vec2 coord) {
 	float footprint = max(length(dFdx(coord)), length(dFdy(coord)));
-	return 0.28 * (1.0 - smoothstep(0.75, 1.5, footprint));
+	return 1.0 - smoothstep(0.75, 1.5, footprint);
 }
 
 float varied_bayer_threshold(vec2 screen_pixel, float cell) {

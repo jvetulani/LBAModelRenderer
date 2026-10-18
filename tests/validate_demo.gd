@@ -25,23 +25,34 @@ func _init() -> void:
 	var empty_animation := HQRReader.read_entry(DEMO_PATH.path_join("ANIM.HQR"), 480)
 	assert(empty_animation["ok"] and empty_animation["data"].decode_u16(0) == 0)
 	assert(not LBA1AnimationDecoder.decode(empty_animation["data"])["ok"], "Zero-keyframe demo action must be rejected")
+	var shared_actions := 0
 	for body_index in range(first["entry_count"]):
 		var loaded_body := viewer.load_body(DEMO_PATH, body_index)
 		assert(loaded_body["ok"])
 		assert(viewer.animation_entries.all(func(item: Dictionary) -> bool: return item["archive_index"] != 480), "Zero-keyframe action leaked into the selector")
+		for item in viewer.animation_entries:
+			if item["generic_ids"].size() > 1:
+				assert(item["name"].begins_with("Shared action"))
+				shared_actions += 1
+	assert(shared_actions > 0, "Aliased demo actions must not get a misleading single name")
 	var loaded := viewer.load_body(DEMO_PATH, 0)
 	assert(loaded["ok"] and viewer.game == "LBA2-96")
 	assert(viewer.body["shade_table"].size() == 65536, "Demo XPL shade table was not loaded")
 	assert(viewer.animation_entries.size() > 0)
-	var matched := 0
+	assert(LBA1AnimationDecoder.ticks_per_second("LBA2-96") == 50.0)
+	assert(LBA1AnimationDecoder.ticks_per_second("LBA2") == 1000.0)
+	var decoded_actions := 0
+	var short_actions := 0
 	for animation_entry in viewer.animation_entries:
 		var anim := HQRReader.read_entry(DEMO_PATH.path_join("ANIM.HQR"), animation_entry["archive_index"])
 		if not anim["ok"]:
 			continue
 		var decoded := LBA1AnimationDecoder.decode(anim["data"])
-		if decoded["ok"] and decoded["group_count"] == viewer.body["groups"].size():
-			matched += 1
-	assert(matched > 0 and matched == viewer.animation_entries.size())
+		if decoded["ok"]:
+			decoded_actions += 1
+			if decoded["group_count"] < viewer.body["groups"].size():
+				short_actions += 1
+	assert(decoded_actions > 0 and decoded_actions == viewer.animation_entries.size())
 	var associated_count: int = viewer.animation_entries.size()
 	var selected := viewer.select_animation(viewer.animation_entries[0]["archive_index"])
 	assert(selected["ok"])
@@ -49,7 +60,11 @@ func _init() -> void:
 	viewer.scrub_to(0)
 	viewer.set_playing(true)
 	viewer._process(0.02)
-	assert(viewer._current_frame > 0, "Demo animation must advance in LBA2 millisecond ticks")
+	assert(viewer._current_frame == 0, "Demo frame must not finish after 20 ms")
+	viewer._process(0.25)
+	assert(viewer._current_frame == 0, "Demo frame duration is in 50 Hz ticks")
+	viewer._process(0.03)
+	assert(viewer._current_frame == 1, "Demo frame must advance after 300 ms")
 	var exported := LBA1GLBExporter.build(viewer.export_input())
 	assert(exported["ok"], str(exported.get("error", "Demo GLB failed")))
 	var state := GLTFState.new()
@@ -76,6 +91,6 @@ func _init() -> void:
 			if material is BaseMaterial3D and material.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED and material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
 				blend_found = true
 		assert(blend_found, "Demo case GLB lost translucent panes")
-	print("LBA2-96: %d/%d bodies, %d associated animations, %d matching body groups, GLB %d bytes" % [valid, first["entry_count"], associated_count, matched, exported["bytes"].size()])
+	print("LBA2-96: %d/%d bodies, %d associated animations (%d with fewer groups), GLB %d bytes" % [valid, first["entry_count"], associated_count, short_actions, exported["bytes"].size()])
 	print("Decode failures: ", failures)
 	quit()

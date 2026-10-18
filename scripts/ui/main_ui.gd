@@ -1,6 +1,10 @@
 class_name MainUI
 extends CanvasLayer
 
+const ACTIVE_YELLOW := Color(0.98, 0.68, 0.075)
+const INACTIVE_WHITE := Color(0.88, 0.90, 0.94)
+const DISABLED_GREY := Color(0.55, 0.59, 0.65, 0.75)
+
 signal load_requested(directory: String, body_index: int)
 signal dither_changed(mode: int)
 signal animation_selected(archive_index: int)
@@ -17,7 +21,7 @@ signal lba2_palette_selected(index: int)
 @onready var source_field: LineEdit = $Screen/TopPanel/Vertical/SourceRow/SourceField
 @onready var body_number: LineEdit = $Screen/TopPanel/Vertical/SourceRow/BodyNumber
 @onready var dither_mode: OptionButton = $Screen/TopPanel/Vertical/SourceRow/DitherMode
-@onready var status_label: Label = $Screen/TopPanel/Vertical/Status
+@onready var status_label: Label = $Screen/Status
 @onready var animation_list: OptionButton = $Screen/AnimationPanel/AnimationRow/AnimationList
 @onready var play_button: Button = $Screen/AnimationPanel/AnimationRow/PlayButton
 @onready var speed_list: OptionButton = $Screen/AnimationPanel/AnimationRow/SpeedList
@@ -30,22 +34,35 @@ signal lba2_palette_selected(index: int)
 @onready var palette_list: OptionButton = $Screen/LBA2Palette
 @onready var shadow_toggle: CheckButton = $Screen/ShadowToggle
 @onready var shadow_label: Label = $Screen/ShadowLabel
+@onready var platform_toggle: CheckButton = $Screen/PlatformToggle
+@onready var platform_label: Label = $Screen/PlatformLabel
+@onready var wireframe_toggle: CheckButton = $Screen/WireframeToggle
+@onready var wireframe_label: Label = $Screen/WireframeLabel
 
 var _syncing_frame := false
 var _has_animation := false
 var _playing := false
 var _pending_export := ""
 var _body_entry_count := 0
+var _play_icon: Texture2D
+var _pause_icon: AtlasTexture
 
 
 func _ready() -> void:
+	_play_icon = play_button.icon
+	_pause_icon = AtlasTexture.new()
+	_pause_icon.atlas = preload("res://assets/ui/icons/pause.png")
+	_pause_icon.region = Rect2(64, 48, 144, 160)
 	browse_button.pressed.connect(_browse_source)
 	body_number.text_submitted.connect(func(_value: String) -> void: request_load())
 	$Screen/BodyNavigation/PreviousBody.pressed.connect(func() -> void: _step_body(-1))
 	$Screen/BodyNavigation/NextBody.pressed.connect(func() -> void: _step_body(1))
-	$Screen/PlatformToggle.toggled.connect(func(visible: bool) -> void: platform_visible_changed.emit(visible))
+	platform_toggle.toggled.connect(func(visible: bool) -> void: platform_visible_changed.emit(visible))
 	shadow_toggle.toggled.connect(func(visible: bool) -> void: shadow_visible_changed.emit(visible))
-	$Screen/WireframeToggle.toggled.connect(func(visible: bool) -> void: wireframe_visible_changed.emit(visible))
+	wireframe_toggle.toggled.connect(func(visible: bool) -> void: wireframe_visible_changed.emit(visible))
+	_bind_switch_color(platform_toggle, platform_label)
+	_bind_switch_color(shadow_toggle, shadow_label)
+	_bind_switch_color(wireframe_toggle, wireframe_label)
 	palette_list.item_selected.connect(func(index: int) -> void: lba2_palette_selected.emit(palette_list.get_item_id(index)))
 	$Screen/TopPanel/Vertical/SourceRow/ExportGLBButton.pressed.connect(func() -> void: _request_export("glb"))
 	blender_button.pressed.connect(func() -> void: _request_export("blend"))
@@ -74,6 +91,7 @@ func _ready() -> void:
 		browse_button.text = "Choose folder"
 		blender_button.hide()
 	set_game("LBA1")
+	set_shadow_available(false)
 
 
 func set_game(game_name: String) -> void:
@@ -81,9 +99,20 @@ func set_game(game_name: String) -> void:
 
 
 func set_shadow_available(available: bool) -> void:
-	shadow_toggle.visible = available
-	shadow_label.visible = available
-	shadow_visible_changed.emit(shadow_toggle.button_pressed)
+	shadow_toggle.disabled = not available
+	_refresh_switch_color(shadow_toggle, shadow_label)
+	shadow_visible_changed.emit(available and shadow_toggle.button_pressed)
+
+
+func _bind_switch_color(toggle: CheckButton, label: Label) -> void:
+	toggle.toggled.connect(func(_pressed: bool) -> void: _refresh_switch_color(toggle, label))
+	_refresh_switch_color(toggle, label)
+
+
+func _refresh_switch_color(toggle: CheckButton, label: Label) -> void:
+	var color := DISABLED_GREY if toggle.disabled else (ACTIVE_YELLOW if toggle.button_pressed else INACTIVE_WHITE)
+	toggle.self_modulate = color
+	label.self_modulate = color
 
 
 func _browse_source() -> void:
@@ -161,7 +190,8 @@ func first_animation_id() -> int:
 
 func set_play_state(value: bool) -> void:
 	_playing = value
-	play_button.text = "Pause" if value else "Play"
+	play_button.icon = _pause_icon if value else _play_icon
+	play_button.tooltip_text = "Pause animation" if value else "Play animation"
 
 
 func set_frame(frame_index: int, frame_count: int, duration_ticks: int) -> void:

@@ -74,6 +74,18 @@ func _init() -> void:
 	if viewer.get("_current_frame") != 2:
 		_fail("Walk frame scrubbing did not reach keyframe 2")
 		return
+	for twin_body in range(5):
+		var twin_loaded := viewer.load_body(source, twin_body)
+		if not twin_loaded["ok"] or twin_loaded["animations"].size() < 50:
+			_fail("Twinsen BODY #%d lost its shared actions" % twin_body)
+			return
+		if not viewer.select_animation(0)["ok"]:
+			_fail("Twinsen BODY #%d could not select Idle" % twin_body)
+			return
+		viewer.scrub_to(1)
+		if viewer.get("_current_frame") != 1:
+			_fail("Twinsen BODY #%d could not reach keyframe 1" % twin_body)
+			return
 	var one_shot_entry := HQRReader.read_entry(source.path_join("ANIM.HQR"), 178)
 	var one_shot := LBA1AnimationDecoder.decode(one_shot_entry["data"])
 	if not one_shot["ok"] or one_shot["frame_count"] != 2 or one_shot["loop_frame"] != 2:

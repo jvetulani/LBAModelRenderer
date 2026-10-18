@@ -15,6 +15,12 @@ func _validate() -> void:
 	var next_button: Button = ui.get_node("Screen/BodyNavigation/NextBody")
 	var platform_switch: CheckButton = ui.get_node("Screen/PlatformToggle")
 	assert(is_equal_approx(next_button.size.x, platform_switch.size.x), "The switch and navigation button widths must match")
+	assert(ui.play_button.text.is_empty() and ui.play_button.icon != null, "Playback uses an icon-only button")
+	var play_icon := ui.play_button.icon
+	ui.set_play_state(true)
+	assert(ui.play_button.icon != play_icon and ui.play_button.tooltip_text == "Pause animation")
+	ui.set_play_state(false)
+	assert(ui.play_button.icon == play_icon and ui.play_button.tooltip_text == "Play animation")
 	for source in [LBA1, LBA2, DEMO]:
 		var first := HQRReader.read_entry(source.path_join("BODY.HQR"), 0)
 		assert(first["ok"])

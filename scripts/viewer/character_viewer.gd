@@ -30,6 +30,7 @@ var _wireframe_enabled := false
 var _current_frame := 0
 var _phase_ticks := 0.0
 var _finished_one_shot := false
+var _master_rotation_offset := Vector3.ZERO
 
 
 func load_body(directory: String, body_index: int) -> Dictionary:
@@ -125,6 +126,7 @@ func _load_body(body_index: int) -> Dictionary:
 	_current_frame = 0
 	_phase_ticks = 0.0
 	_finished_one_shot = false
+	_master_rotation_offset = Vector3.ZERO
 	character = CharacterMeshBuilder.build_static_pose(body, _palette)
 	character.get_node("Wireframe").visible = _wireframe_enabled
 	var polygon_material: ShaderMaterial = character.get_node("Polygons").material_override
@@ -220,7 +222,7 @@ func _find_animations(body_index: int) -> Array:
 		return matches["animations"] if matches["ok"] else []
 	if game == "LBA2-96":
 		var demo_found := []
-		var demo_seen := {}
+		var demo_by_archive := {}
 		var first_demo := _read_entry("FILE3D.HQR", 0)
 		if not first_demo["ok"]:
 			return demo_found
@@ -235,16 +237,25 @@ func _find_animations(body_index: int) -> Array:
 				continue
 			for animation_record in decoded["animations"]:
 				var archive_index: int = animation_record["archive_index"]
-				if demo_seen.has(archive_index):
+				var generic_id: int = animation_record["generic_id"]
+				if demo_by_archive.has(archive_index):
+					var existing: Dictionary = demo_found[demo_by_archive[archive_index]]
+					if not existing["generic_ids"].has(generic_id):
+						existing["generic_ids"].append(generic_id)
 					continue
 				var animation_entry := _read_entry("ANIM.HQR", archive_index)
 				if not animation_entry["ok"]:
 					continue
 				var animation_data := LBA1AnimationDecoder.decode(animation_entry["data"])
-				if not animation_data["ok"] or animation_data["group_count"] != body["groups"].size():
+				# FILE3D owns the association. The original engine applies only
+				# the groups present in a shorter action to a body variant.
+				if not animation_data["ok"]:
 					continue
-				demo_seen[archive_index] = true
-				demo_found.append({"archive_index": archive_index, "generic_id": animation_record["generic_id"], "file3d_index": file_index, "name": LBA1File3DDecoder.animation_name(animation_record["generic_id"])})
+				demo_by_archive[archive_index] = demo_found.size()
+				demo_found.append({"archive_index": archive_index, "generic_id": generic_id, "generic_ids": [generic_id], "file3d_index": file_index, "name": LBA1File3DDecoder.animation_name(generic_id)})
+		for item in demo_found:
+			if item["generic_ids"].size() > 1:
+				item["name"] = "Shared action (%d IDs)" % item["generic_ids"].size()
 		return demo_found
 	var found := []
 	var seen := {}
@@ -273,7 +284,7 @@ func _find_animations(body_index: int) -> Array:
 			if not animation_entry["ok"]:
 				continue
 			var animation_data := LBA1AnimationDecoder.decode(animation_entry["data"])
-			if not animation_data["ok"] or animation_data["group_count"] != body["groups"].size():
+			if not animation_data["ok"]:
 				continue
 			seen[archive_index] = true
 			found.append({
@@ -297,6 +308,7 @@ func select_animation(archive_index: int) -> Dictionary:
 	animation = decoded
 	_current_frame = 0
 	_phase_ticks = 0.0
+	_master_rotation_offset = Vector3.ZERO
 	_finished_one_shot = false
 	playing = true
 	_apply_pose(0, 0, 1.0)
@@ -331,6 +343,7 @@ func set_playing(value: bool) -> void:
 	if value and _finished_one_shot:
 		_current_frame = 0
 		_phase_ticks = 0.0
+		_master_rotation_offset = Vector3.ZERO
 		_finished_one_shot = false
 		_apply_pose(0, 0, 1.0)
 		_emit_frame()
@@ -346,6 +359,7 @@ func scrub_to(frame_index: int) -> void:
 		return
 	_current_frame = clampi(frame_index, 0, animation["frame_count"] - 1)
 	_phase_ticks = 0.0
+	_master_rotation_offset = Vector3.ZERO
 	_finished_one_shot = false
 	_apply_pose(_current_frame, _current_frame, 1.0)
 	_emit_frame()
@@ -358,8 +372,7 @@ func _process(delta: float) -> void:
 		return
 	var next_frame := _next_frame(_current_frame)
 	var duration: int = animation["frames"][next_frame]["duration_ticks"]
-	# The demo already uses LBA2's millisecond TimerRefHR and 4096-angle units.
-	_phase_ticks += minf(delta, 0.25) * (50.0 if game == "LBA1" else 1000.0) * speed
+	_phase_ticks += minf(delta, 0.25) * LBA1AnimationDecoder.ticks_per_second(game) * speed
 	while _phase_ticks >= duration:
 		if _current_frame + 1 == animation["frame_count"] and animation["loop_frame"] == animation["frame_count"]:
 			playing = false
@@ -368,6 +381,11 @@ func _process(delta: float) -> void:
 			playback_ended.emit()
 			return
 		_phase_ticks -= duration
+		if next_frame <= _current_frame:
+			var angle_scale := TAU / (1024.0 if game == "LBA1" else 4096.0)
+			var last_rotation := CharacterPose.master_rotation_units(animation, _current_frame, _current_frame, 1.0)
+			var loop_rotation := CharacterPose.master_rotation_units(animation, next_frame, next_frame, 1.0)
+			_master_rotation_offset += (last_rotation - loop_rotation) * angle_scale
 		_current_frame = next_frame
 		next_frame = _next_frame(_current_frame)
 		duration = animation["frames"][next_frame]["duration_ticks"]
@@ -382,6 +400,8 @@ func _next_frame(frame_index: int) -> int:
 func _apply_pose(source_frame: int, target_frame: int, weight: float) -> void:
 	var pose: Dictionary = LBA1Pose.sample(body, animation, source_frame, target_frame, weight) if game == "LBA1" else LBA2_POSE.sample(body, animation, source_frame, target_frame, weight)
 	CharacterMeshBuilder.update_pose(character, body, pose)
+	var rotation: Vector3 = pose["master_rotation"] + _master_rotation_offset
+	character.basis = Basis(Vector3.RIGHT, rotation.x) * Basis(Vector3.BACK, rotation.z) * Basis(Vector3.UP, rotation.y)
 
 
 func _emit_frame() -> void:

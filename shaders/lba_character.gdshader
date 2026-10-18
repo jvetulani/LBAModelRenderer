@@ -55,7 +55,7 @@ float anchored_dither_threshold(vec2 coord) {
 
 float anchored_dither_weight(vec2 coord) {
 	float footprint = max(length(dFdx(coord)), length(dFdy(coord)));
-	return 0.28 * (1.0 - smoothstep(0.75, 1.5, footprint));
+	return 1.0 - smoothstep(0.75, 1.5, footprint);
 }
 
 float varied_bayer_threshold(vec2 screen_pixel, float cell) {
@@ -92,9 +92,15 @@ void vertex() {
 		float normal_length = length(CUSTOM0.xyz);
 		pixel_source_normal = normal_length > 0.0 ? CUSTOM0.xyz / normal_length : vec3(0.0);
 		pixel_light_scale = normal_length / max(CUSTOM0.w, 1.0);
-		float shade = palette_index_override >= 0
+		float vertex_shade = palette_index_override >= 0
 			? 0.0
-			: floor(max(dot(CUSTOM0.xyz, source_light_vector), 0.0) / max(CUSTOM0.w, 1.0));
+			: max(dot(CUSTOM0.xyz, source_light_vector), 0.0) / max(CUSTOM0.w, 1.0);
+		// Soft dither needs the continuous vertex light level. Rounding here
+		// exposes every triangle before the fragment can blend palette steps.
+		// A small ambient lift also reduces the severe dark facets that become
+		// conspicuous when the original low-resolution body fills a HD viewport.
+		float soft_vertex_shade = 3.0 + vertex_shade * 0.65;
+		float shade = dither_mode == 4 && palette_index_override < 0 ? soft_vertex_shade : floor(vertex_shade);
 		source_palette_index = mod(base_index + shade, 256.0);
 		source_render_type = palette_index_override >= 0 ? -1.0 : UV2.y;
 	}

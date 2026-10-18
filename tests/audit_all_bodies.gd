@@ -45,7 +45,7 @@ func _audit() -> void:
 			failures.append("%d: %s" % [body_index, loaded["error"]])
 			continue
 		var mesh: ArrayMesh = viewer.character.get_node("Polygons").mesh
-		var has_glass := viewer.character.has_node("TranslucentPolygons") and viewer.character.get_node("TranslucentPolygons").mesh.get_surface_count() > 0
+		var has_glass: bool = viewer.character.has_node("TranslucentPolygons") and viewer.character.get_node("TranslucentPolygons").mesh.get_surface_count() > 0
 		if mesh.get_surface_count() == 0 and not has_glass and viewer.body["lines"].is_empty() and viewer.body["spheres"].is_empty():
 			empty_geometry.append(body_index)
 		camera.frame_points(loaded["points"], Vector3.ZERO)
