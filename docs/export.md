@@ -6,6 +6,8 @@ The viewer exports the loaded **LBA1** body, its source-associated animations an
 
 On desktop, choose **Export GLB** or **Export Blender** after loading a character. The Blender button runs an installed `blender` executable; set `LBA_BLENDER` to a different executable path if needed. On the web, choose the LBA1 game folder containing BODY.HQR, ANIM.HQR, FILE3D.HQR and RESS.HQR, then use **Export GLB**. The archives stay in browser memory and are not sent to the host. The hosted viewer is at https://jvetulani.github.io/LBAModelViewer/.
 
+For a Pages release, run `python3 tools/prepare_pages.py WEB_EXPORT_DIR EMPTY_OUTPUT_DIR` after the Godot web export, then publish the prepared directory at the root of `gh-pages`. The script gives the `.pck` a content-based filename so a browser cannot reuse an older cached game pack after the page updates.
+
 The web build cannot create `.blend` files directly because Blender is a desktop application. To turn a downloaded GLB into an editable Eevee scene, run:
 
 ```bash
