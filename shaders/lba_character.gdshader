@@ -6,6 +6,8 @@ uniform sampler2D texture_atlas : filter_nearest, repeat_disable;
 uniform sampler2D shade_table : filter_nearest, repeat_disable;
 uniform bool has_texture_atlas = false;
 uniform bool has_shade_table = false;
+// The 1996 LBA2 demo uses LBA2's 16-colour ramps inside an LBA1-style BODY.
+uniform float palette_ramp_size = 0.0;
 uniform float normal_light_level = 12.0;
 uniform int palette_index_override = -1;
 uniform bool use_mesh_lighting = false;
@@ -58,6 +60,14 @@ float anchored_dither_weight(vec2 coord) {
 	return 1.0 - smoothstep(0.75, 1.5, footprint);
 }
 
+float keep_in_palette_ramp(float base_index, float lit_index) {
+	if (palette_ramp_size < 2.0 || dither_mode != 4) {
+		return mod(lit_index, 256.0);
+	}
+	float ramp_start = floor(base_index / palette_ramp_size) * palette_ramp_size;
+	return clamp(lit_index, ramp_start, ramp_start + palette_ramp_size - 1.0);
+}
+
 float varied_bayer_threshold(vec2 screen_pixel, float cell) {
 	vec2 grid_pixel = floor(screen_pixel / cell);
 	vec2 tile = floor(grid_pixel / 4.0);
@@ -86,7 +96,7 @@ void vertex() {
 		vec3 normal_world = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 		pixel_source_normal = normal_world;
 		pixel_light_scale = mesh_light_span / max(length(source_light_vector), 0.001);
-		source_palette_index = base_index + max(dot(normal_world, normalize(source_light_vector)), 0.0) * mesh_light_span;
+		source_palette_index = keep_in_palette_ramp(base_index, base_index + max(dot(normal_world, normalize(source_light_vector)), 0.0) * mesh_light_span);
 		source_render_type = 9.0;
 	} else {
 		float normal_length = length(CUSTOM0.xyz);
@@ -101,7 +111,7 @@ void vertex() {
 		// conspicuous when the original low-resolution body fills a HD viewport.
 		float soft_vertex_shade = 3.0 + vertex_shade * 0.65;
 		float shade = dither_mode == 4 && palette_index_override < 0 ? soft_vertex_shade : floor(vertex_shade);
-		source_palette_index = mod(base_index + shade, 256.0);
+		source_palette_index = keep_in_palette_ramp(base_index, base_index + shade);
 		source_render_type = palette_index_override >= 0 ? -1.0 : UV2.y;
 	}
 }
@@ -158,7 +168,7 @@ void fragment() {
 		ROUGHNESS = 1.0;
 	} else if ((dither_mode == 3 || dither_mode == 4) && source_render_type >= 7.0) {
 		float pixel_shade = max(dot(normalize(pixel_source_normal), source_light_vector), 0.0) * pixel_light_scale;
-		float smooth_index = dither_mode == 3 ? mod(source_base_index + pixel_shade, 256.0) : mod(source_palette_index, 256.0);
+		float smooth_index = dither_mode == 3 ? keep_in_palette_ramp(source_base_index, source_base_index + pixel_shade) : source_palette_index;
 		float lower_index = floor(smooth_index);
 		float upper_index = mod(lower_index + 1.0, 256.0);
 		vec3 lower_color = texture(palette_texture, vec2((lower_index + 0.5) / 256.0, 0.5)).rgb;

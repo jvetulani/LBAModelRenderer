@@ -3,10 +3,12 @@ extends Node
 
 signal archives_ready(archives: Dictionary, folder_name: String)
 signal failed(message: String)
+signal share_finished(message: String)
 
 var archives: Dictionary = {}
 var _pending_archives: Dictionary = {}
 var _callback: JavaScriptObject
+var _share_callback: JavaScriptObject
 var _folder_name := ""
 
 
@@ -15,7 +17,24 @@ func _ready() -> void:
 		return
 	_callback = JavaScriptBridge.create_callback(_on_browser_files)
 	JavaScriptBridge.get_interface("window").lbaArchivesCallback = _callback
+	_share_callback = JavaScriptBridge.create_callback(_on_share_result)
+	JavaScriptBridge.get_interface("window").lbaShareCallback = _share_callback
 	JavaScriptBridge.eval("""
+		window.lbaCopyLink = async function (source, body, animation) {
+			const link = new URL(window.location.href);
+			link.pathname = link.pathname.replace(/link=[^/]+\\/?$/, '');
+			link.search = '';
+			link.hash = '';
+			link.searchParams.set('link', source);
+			link.searchParams.set('body', String(body));
+			if (animation >= 0) link.searchParams.set('anim', String(animation));
+			try {
+				await navigator.clipboard.writeText(link.href);
+				window.lbaShareCallback('Link copied to clipboard.');
+			} catch (error) {
+				window.lbaShareCallback('Copy this link: ' + link.href);
+			}
+		};
 		window.lbaReadArchive = async function (name, folder, buffer) {
 			const bytes = new Uint8Array(buffer);
 			const chunks = [];
@@ -62,6 +81,9 @@ func _ready() -> void:
 			try {
 				const base = new URL(path.endsWith('/') ? path : path + '/');
 				if (!['http:', 'https:'].includes(base.protocol)) throw new Error('Use an HTTP or HTTPS folder URL');
+				if (base.hostname === 'drive.google.com') {
+					throw new Error('Google Drive folder links need a download proxy; Drive does not serve HQR files as a normal web folder.');
+				}
 				for (const name of ['BODY.HQR', 'ANIM.HQR', 'RESS.HQR']) {
 					const response = await fetch(new URL(name, base));
 					if (!response.ok) throw new Error(name + ': HTTP ' + response.status);
@@ -93,6 +115,18 @@ func load_url(url: String) -> void:
 	_pending_archives.clear()
 	_folder_name = url
 	JavaScriptBridge.eval("window.lbaFetchArchives(%s)" % JSON.stringify(url))
+
+
+func copy_deep_link(source: String, body_index: int, animation_index: int) -> void:
+	if not OS.has_feature("web"):
+		share_finished.emit("Share links are only available on the web build.")
+		return
+	JavaScriptBridge.eval("window.lbaCopyLink(%s, %d, %d)" % [JSON.stringify(source), body_index, animation_index])
+
+
+func _on_share_result(arguments: Array) -> void:
+	if not arguments.is_empty():
+		share_finished.emit(str(arguments[0]))
 
 
 func _on_browser_files(arguments: Array) -> void:

@@ -47,6 +47,8 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray) 
 		polygons_node.material_override = _make_material(palette_texture, -1, is_lba2, atlas_texture, shade_texture, body.get("normal_light_level", 12))
 		if is_lba2:
 			polygons_node.material_override.set_shader_parameter("reverse_shade_strength", float(body.get("appearance", {}).get("reverse_shade_strength", 0.0)))
+		elif body.get("game", "") == "LBA2-96":
+			polygons_node.material_override.set_shader_parameter("palette_ramp_size", 16.0)
 	if is_lba2 and atlas_texture != null and LBA2_APPEARANCE.uses_spectral_preview(body):
 		var overlay := ShaderMaterial.new()
 		overlay.shader = LBA2_SPECTRAL_OVERLAY

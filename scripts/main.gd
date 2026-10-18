@@ -9,6 +9,8 @@ extends Node3D
 
 var _web_archives: Dictionary = {}
 var _active_source := ""
+var _pending_remote_body := 0
+var _pending_animation := -1
 
 
 func _ready() -> void:
@@ -17,6 +19,8 @@ func _ready() -> void:
 	ui.archive_files_requested.connect(web_picker.pick)
 	web_picker.archives_ready.connect(_on_archives_ready)
 	web_picker.failed.connect(ui.set_status)
+	web_picker.share_finished.connect(ui.set_status)
+	ui.share_requested.connect(_copy_link)
 	ui.dither_changed.connect(viewer.set_dither_mode)
 	ui.dither_changed.connect(display_platform.set_dither_mode)
 	ui.platform_visible_changed.connect(func(visible: bool) -> void: display_platform.visible = visible)
@@ -37,6 +41,22 @@ func _ready() -> void:
 			directory = argument.trim_prefix("--lba-source=")
 		elif argument.begins_with("--body-index="):
 			body_index = int(argument.trim_prefix("--body-index="))
+	if OS.has_feature("web"):
+		var deep_link = JSON.parse_string(str(JavaScriptBridge.eval("""
+			(() => {
+				const page = new URL(window.location.href);
+				const pathValue = page.pathname.split('/').find(part => part.startsWith('link='));
+				return JSON.stringify({
+					link: page.searchParams.get('link') || (pathValue ? decodeURIComponent(pathValue.slice(5)) : ''),
+					body: page.searchParams.get('body') || '0',
+					anim: page.searchParams.get('anim') || '-1'
+				});
+			})()
+		""")))
+		if deep_link is Dictionary and not str(deep_link.get("link", "")).is_empty():
+			directory = str(deep_link["link"])
+			body_index = maxi(0, int(deep_link.get("body", "0")))
+			_pending_animation = int(deep_link.get("anim", "-1"))
 	ui.set_source(directory, body_index)
 	if not directory.is_empty():
 		_active_source = directory
@@ -48,6 +68,8 @@ func _load_source(directory: String, body_index: int) -> void:
 		body_index = 0
 		ui.set_source(directory, 0)
 	if OS.has_feature("web") and (directory.begins_with("https://") or directory.begins_with("http://")) and (directory != web_picker.archives.get("_source_url", "")):
+		_pending_remote_body = body_index
+		ui.set_share_available(false)
 		ui.set_status("Loading source archives…")
 		web_picker.load_url(directory)
 		return
@@ -59,10 +81,12 @@ func _load_source(directory: String, body_index: int) -> void:
 		return
 	var result := viewer.load_archives(_web_archives, body_index) if OS.has_feature("web") else viewer.load_body(directory, body_index)
 	if not result["ok"]:
+		ui.set_share_available(false)
 		ui.set_status(result["error"])
 		return
 	_active_source = directory
 	ui.set_body_entry_count(result["entry_count"])
+	ui.set_share_available(OS.has_feature("web") and (directory.begins_with("https://") or directory.begins_with("http://")))
 	orbit_camera.frame_points(result["points"], stand_point.position)
 	display_platform.set_game(viewer.game)
 	ui.set_game(viewer.game)
@@ -71,9 +95,10 @@ func _load_source(directory: String, body_index: int) -> void:
 	ui.set_animations(result["animations"])
 	var shadow_note := "source shadow" if result["shadow_loaded"] else "shadow unavailable"
 	ui.set_status("%s; %s; %d associated animations." % [result["summary"], shadow_note, result["animations"].size()])
-	var first_animation := ui.first_animation_id()
-	if first_animation >= 0:
-		_select_animation(first_animation)
+	var animation_id := _pending_animation if ui.select_animation_id(_pending_animation) else ui.first_animation_id()
+	_pending_animation = -1
+	if animation_id >= 0:
+		_select_animation(animation_id)
 
 
 func _select_lba2_palette(index: int) -> void:
@@ -86,10 +111,19 @@ func _select_lba2_palette(index: int) -> void:
 
 func _on_archives_ready(archives: Dictionary, folder_name: String) -> void:
 	_web_archives = archives
+	var body_index := 0
 	if folder_name.begins_with("https://") or folder_name.begins_with("http://"):
 		web_picker.archives["_source_url"] = folder_name
-	ui.set_source(folder_name, 0)
-	_load_source(folder_name, 0)
+		body_index = _pending_remote_body
+	ui.set_source(folder_name, body_index)
+	_load_source(folder_name, body_index)
+
+
+func _copy_link() -> void:
+	if not OS.has_feature("web") or not (_active_source.begins_with("https://") or _active_source.begins_with("http://")):
+		ui.set_status("Load an HTTP or HTTPS archive folder to make a shareable link.")
+		return
+	web_picker.copy_deep_link(_active_source, ui.body_index(), ui.selected_animation_id())
 
 
 func _select_animation(archive_index: int) -> void:

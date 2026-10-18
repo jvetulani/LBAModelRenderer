@@ -17,6 +17,7 @@ signal platform_visible_changed(visible: bool)
 signal shadow_visible_changed(visible: bool)
 signal wireframe_visible_changed(visible: bool)
 signal lba2_palette_selected(index: int)
+signal share_requested
 
 @onready var source_field: LineEdit = $Screen/TopPanel/Vertical/SourceRow/SourceField
 @onready var body_number: LineEdit = $Screen/TopPanel/Vertical/SourceRow/BodyNumber
@@ -31,6 +32,7 @@ signal lba2_palette_selected(index: int)
 @onready var export_dialog: FileDialog = $Screen/ExportDialog
 @onready var browse_button: Button = $Screen/TopPanel/Vertical/SourceRow/BrowseButton
 @onready var blender_button: Button = $Screen/TopPanel/Vertical/SourceRow/ExportBlenderButton
+@onready var copy_link_button: Button = $Screen/TopPanel/Vertical/SourceRow/CopyLinkButton
 @onready var palette_list: OptionButton = $Screen/LBA2Palette
 @onready var shadow_toggle: CheckButton = $Screen/ShadowToggle
 @onready var shadow_label: Label = $Screen/ShadowLabel
@@ -66,6 +68,7 @@ func _ready() -> void:
 	palette_list.item_selected.connect(func(index: int) -> void: lba2_palette_selected.emit(palette_list.get_item_id(index)))
 	$Screen/TopPanel/Vertical/SourceRow/ExportGLBButton.pressed.connect(func() -> void: _request_export("glb"))
 	blender_button.pressed.connect(func() -> void: _request_export("blend"))
+	copy_link_button.pressed.connect(func() -> void: share_requested.emit())
 	export_dialog.file_selected.connect(func(path: String) -> void: export_requested.emit(_pending_export, path))
 	folder_dialog.dir_selected.connect(func(path: String) -> void:
 		source_field.text = path
@@ -90,6 +93,8 @@ func _ready() -> void:
 		source_field.placeholder_text = "Choose your game folder"
 		browse_button.text = "Choose folder"
 		blender_button.hide()
+	else:
+		copy_link_button.hide()
 	set_game("LBA1")
 	set_shadow_available(false)
 
@@ -147,6 +152,10 @@ func set_body_entry_count(count: int) -> void:
 	_body_entry_count = maxi(count, 0)
 
 
+func set_share_available(available: bool) -> void:
+	copy_link_button.disabled = not available
+
+
 func request_load() -> void:
 	var index := body_index()
 	body_number.text = str(index)
@@ -186,6 +195,20 @@ func set_animations(entries: Array) -> void:
 
 func first_animation_id() -> int:
 	return animation_list.get_item_id(0) if _has_animation else -1
+
+
+func selected_animation_id() -> int:
+	return animation_list.get_selected_id() if _has_animation else -1
+
+
+func select_animation_id(archive_index: int) -> bool:
+	if not _has_animation:
+		return false
+	var item_index := animation_list.get_item_index(archive_index)
+	if item_index < 0:
+		return false
+	animation_list.select(item_index)
+	return true
 
 
 func set_play_state(value: bool) -> void:
