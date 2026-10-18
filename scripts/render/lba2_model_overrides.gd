@@ -45,26 +45,89 @@ static func apply_geometry(body: Dictionary) -> void:
 		uvs[second] = saved
 		polygon["texture_uvs"] = uvs
 		polygons[polygon_index] = polygon
-	var arm_uv_scale := float(appearance.get("arm_uv_u_scale", 1.0))
-	if arm_uv_scale != 1.0:
+	var arm_uv_min_density := float(appearance.get("arm_uv_min_density", 0.0))
+	if arm_uv_min_density > 0.0:
+		# All four monkey limb chains have faces with a collapsed texture axis.
+		# Restore that axis to a consistent texel density in the face plane.
 		var point_groups: PackedInt32Array = body["point_groups"]
+		var pose_points: PackedVector3Array = body["pose_points"]
 		for polygon_index in range(polygons.size()):
 			var polygon: Dictionary = polygons[polygon_index]
-			if int(polygon.get("texture_handle", -1)) < 0:
+			if int(polygon.get("texture_handle", -1)) != 1:
 				continue
 			var points: PackedInt32Array = polygon["points"]
-			var positive_arm := true
-			var negative_arm := true
+			var arm_face := false
+			var arm_region := true
 			for point_index in points:
 				var group_index := point_groups[point_index]
-				positive_arm = positive_arm and group_index in [19, 20, 21]
-				negative_arm = negative_arm and group_index in [22, 23, 24]
-			if not positive_arm and not negative_arm:
+				arm_face = arm_face or (group_index >= 13 and group_index <= 24)
+				arm_region = arm_region and (group_index == 4 or group_index == 5 or (group_index >= 13 and group_index <= 24))
+			if not arm_face or not arm_region:
 				continue
-			var center_u := 125.0 if positive_arm else 25.0
 			var uvs: PackedVector2Array = polygon["texture_uvs"]
-			for corner in range(uvs.size()):
-				uvs[corner].x = center_u + (uvs[corner].x - center_u) * arm_uv_scale
-			polygon["texture_uvs"] = uvs
-			polygons[polygon_index] = polygon
+			var repaired := _restore_uv_density(points, pose_points, uvs, arm_uv_min_density)
+			if repaired != uvs:
+				polygon["texture_uvs"] = repaired
+				polygons[polygon_index] = polygon
 	body["polygons"] = polygons
+
+
+static func _restore_uv_density(points: PackedInt32Array, positions: PackedVector3Array, uvs: PackedVector2Array, minimum: float) -> PackedVector2Array:
+	if points.size() < 3 or uvs.size() != points.size():
+		return uvs
+	var origin: Vector3 = positions[points[0]]
+	var tangent: Vector3 = positions[points[1]] - origin
+	if tangent.length_squared() < 0.0001:
+		return uvs
+	tangent = tangent.normalized()
+	var normal: Vector3 = tangent.cross(positions[points[2]] - origin)
+	if normal.length_squared() < 0.0001:
+		return uvs
+	var bitangent := normal.normalized().cross(tangent)
+	var xx := 0.0
+	var xy := 0.0
+	var yy := 0.0
+	var ux := 0.0
+	var uy := 0.0
+	var vx := 0.0
+	var vy := 0.0
+	var local := PackedVector2Array()
+	for corner in range(points.size()):
+		var delta: Vector3 = positions[points[corner]] - origin
+		var p := Vector2(delta.dot(tangent), delta.dot(bitangent))
+		local.append(p)
+		var uv_delta := uvs[corner] - uvs[0]
+		xx += p.x * p.x
+		xy += p.x * p.y
+		yy += p.y * p.y
+		ux += uv_delta.x * p.x
+		uy += uv_delta.x * p.y
+		vx += uv_delta.y * p.x
+		vy += uv_delta.y * p.y
+	var determinant := xx * yy - xy * xy
+	if determinant < 0.0001:
+		return uvs
+	var gradient_u := Vector2((ux * yy - uy * xy) / determinant, (uy * xx - ux * xy) / determinant)
+	var gradient_v := Vector2((vx * yy - vy * xy) / determinant, (vy * xx - vx * xy) / determinant)
+	var a := gradient_u.x * gradient_u.x + gradient_v.x * gradient_v.x
+	var b := gradient_u.x * gradient_u.y + gradient_v.x * gradient_v.y
+	var c := gradient_u.y * gradient_u.y + gradient_v.y * gradient_v.y
+	var spread := sqrt((a - c) * (a - c) + 4.0 * b * b)
+	var major_value := maxf((a + c + spread) * 0.5, 0.0)
+	var minor_value := maxf((a + c - spread) * 0.5, 0.0)
+	var major := sqrt(major_value)
+	if major < minimum or sqrt(minor_value) >= minimum:
+		return uvs
+	var right_major := Vector2(b, major_value - a)
+	if right_major.length_squared() < 0.00000001:
+		right_major = Vector2.RIGHT if a >= c else Vector2.DOWN
+	right_major = right_major.normalized()
+	var right_minor := Vector2(-right_major.y, right_major.x)
+	var left_major := Vector2(gradient_u.dot(right_major), gradient_v.dot(right_major)) / major
+	var left_minor := Vector2(-left_major.y, left_major.x)
+	if gradient_u.cross(gradient_v) < 0.0:
+		left_minor = -left_minor
+	var repaired := PackedVector2Array()
+	for p in local:
+		repaired.append(uvs[0] + left_major * major * p.dot(right_major) + left_minor * minimum * p.dot(right_minor))
+	return repaired

@@ -135,15 +135,27 @@ func _init() -> void:
 	for monkey_index in [388, 389]:
 		var monkey: Dictionary = BODY_DECODER.decode(HQRReader.read_entry(path.path_join("BODY.HQR"), monkey_index)["data"])
 		assert(monkey["ok"])
-		var narrow_face: int = 281 + monkey_index - 388
-		var original_uvs: PackedVector2Array = monkey["polygons"][narrow_face]["texture_uvs"].duplicate()
+		var side_face: int = 281 + monkey_index - 388
+		var original_uvs: PackedVector2Array = monkey["polygons"][side_face]["texture_uvs"].duplicate()
+		var opposite_side: int = 252 + monkey_index - 388
+		var opposite_uvs: PackedVector2Array = monkey["polygons"][opposite_side]["texture_uvs"].duplicate()
+		var stretched_faces := [177, 181, 182, 202, 203, 209, 212, 215, 216, 236, 252, 253, 255, 256, 280, 281, 282, 284, 285, 309, 195, 199, 204, 205, 207, 229, 233, 238, 239, 240, 257, 258, 259, 260, 278, 279, 286, 287, 288, 289, 307, 308]
+		var stretched_uvs := {}
+		for face_index in stretched_faces:
+			var variant_face: int = face_index + monkey_index - 388
+			stretched_uvs[variant_face] = monkey["polygons"][variant_face]["texture_uvs"].duplicate()
 		var unchanged_face: int = 310 + monkey_index - 388
 		var original_face_uvs: PackedVector2Array = monkey["polygons"][unchanged_face]["texture_uvs"].duplicate()
 		monkey["appearance"] = LBA2_OVERRIDES.for_retail_body(monkey_index)
 		LBA2_OVERRIDES.apply_geometry(monkey)
-		var repaired_uvs: PackedVector2Array = monkey["polygons"][narrow_face]["texture_uvs"]
-		assert(is_equal_approx(absf(repaired_uvs[0].x - repaired_uvs[1].x), absf(original_uvs[0].x - original_uvs[1].x) * 3.0), "Monkey arm UVs must cover more texture columns")
+		var repaired_uvs: PackedVector2Array = monkey["polygons"][side_face]["texture_uvs"]
+		assert(absf(repaired_uvs[0].x - repaired_uvs[1].x) > absf(original_uvs[0].x - original_uvs[1].x) * 4.0, "Monkey arm side UVs must cover more texture columns")
+		assert(monkey["polygons"][opposite_side]["texture_uvs"] != opposite_uvs, "Both monkey arm side faces must be repaired")
+		for face_index in stretched_uvs:
+			assert(monkey["polygons"][face_index]["texture_uvs"] != stretched_uvs[face_index], "Monkey BODY #%d arm face %d remains stretched" % [monkey_index, face_index])
 		assert(monkey["polygons"][unchanged_face]["texture_uvs"] == original_face_uvs, "Monkey face texture must stay unchanged")
+		assert(viewer.load_body(path, monkey_index)["ok"])
+		assert(LBA1GLBExporter.build(viewer.export_input())["ok"], "Monkey BODY #%d GLB export failed" % monkey_index)
 	for shark_index in [320, 321, 322]:
 		var shark_loaded := viewer.load_body(path, shark_index)
 		assert(shark_loaded["ok"])
