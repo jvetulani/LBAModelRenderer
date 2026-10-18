@@ -7,9 +7,17 @@ func _initialize() -> void:
 		if argument.begins_with("--lba1="):
 			source = argument.trim_prefix("--lba1=")
 	assert(not source.is_empty(), "Pass --lba1=PATH")
+	for body_index in [49, 50]:
+		_validate_body(source, body_index)
+	print("PASS: both catamarans' sails, action labels, motion grid, and exported clips")
+	quit(0)
+
+
+func _validate_body(source: String, body_index: int) -> void:
 	var viewer := CharacterViewer.new()
 	root.add_child(viewer)
-	assert(viewer.load_body(source, 49)["ok"])
+	assert(viewer.load_body(source, body_index)["ok"])
+	assert(viewer.body["polygons"].size() == (68 if body_index == 49 else 70))
 	var names := {}
 	for entry in viewer.animation_entries:
 		names[entry["archive_index"]] = entry["name"]
@@ -47,5 +55,4 @@ func _initialize() -> void:
 	var state := GLTFState.new()
 	assert(document.append_from_buffer(exported["bytes"], "", state) == OK)
 	assert(state.get_animations().size() >= 5)
-	print("PASS: catamaran sail, action labels, motion grid, and exported clips")
-	quit(0)
+	viewer.queue_free()

@@ -344,7 +344,7 @@ func _find_animations(body_index: int) -> Array:
 			var action_name := LBA1File3DDecoder.animation_name(anim_record["generic_id"])
 			# The catamaran's side-movement actions share all joint poses with
 			# Back up. Their distinct X root steps are the only authored change.
-			if body_index == LBA1_SAIL_REPAIR.BODY_INDEX and anim_record["generic_id"] in [124, 125]:
+			if LBA1_SAIL_REPAIR.BODY_INDICES.has(body_index) and anim_record["generic_id"] in [124, 125]:
 				action_name = "Move left" if anim_record["generic_id"] == 124 else "Move right"
 			found.append({
 				"archive_index": archive_index,

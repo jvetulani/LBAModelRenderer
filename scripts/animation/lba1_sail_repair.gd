@@ -1,18 +1,18 @@
 class_name LBA1SailRepair
 extends RefCounted
 
-# BODY #49's two sail panels share vertices with the mast. Four of its five
-# source actions rotate the free panel vertices around X, folding the panels
-# through themselves. ANIM #231 (the sailing action) keeps the same panels
-# open and supplies the intended small flutter. Keep all other source motion.
-const BODY_INDEX := 49
+# BODY #49 and pirate-flag variant #50 share the same sail groups and actions.
+# Four source actions rotate the free panel vertices around X, folding the
+# panels through themselves. ANIM #231 keeps them open with a small flutter.
+# Preserve every other group and each action's root movement.
+const BODY_INDICES := [49, 50]
 const SAILING_ANIMATION := 231
 const FOLDED_ANIMATIONS := [230, 232, 233, 234]
 const SAIL_GROUPS := [3, 4]
 
 
 static func needs_repair(body_index: int, body: Dictionary, animation_index: int) -> bool:
-	if body_index != BODY_INDEX or not FOLDED_ANIMATIONS.has(animation_index):
+	if not BODY_INDICES.has(body_index) or not FOLDED_ANIMATIONS.has(animation_index):
 		return false
 	if body.get("game", "LBA1") != "LBA1" or body.get("group_count", 0) != 6 or body.get("points", PackedVector3Array()).size() != 69:
 		return false
