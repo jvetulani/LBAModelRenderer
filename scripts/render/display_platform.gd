@@ -23,6 +23,12 @@ func set_palette_texture(texture: Texture2D) -> void:
 		material.set_shader_parameter("palette_texture", texture)
 
 
+func set_dither_mode(mode: int) -> void:
+	var material := material_override as ShaderMaterial
+	if material != null:
+		material.set_shader_parameter("dither_mode", mode)
+
+
 func _apply_palette_index() -> void:
 	var material := material_override as ShaderMaterial
 	if material != null:

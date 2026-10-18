@@ -4,7 +4,7 @@ The viewer exports the loaded **LBA1** body, its source-associated animations an
 
 ## In the viewer
 
-On desktop, choose **Export GLB** or **Export Blender** after loading a character. The Blender button runs an installed `blender` executable; set `LBA_BLENDER` to a different executable path if needed. On the web, select BODY.HQR, ANIM.HQR, FILE3D.HQR and RESS.HQR together, then use **Export GLB**. The archives stay in browser memory and are not sent to the host.
+On desktop, choose **Export GLB** or **Export Blender** after loading a character. The Blender button runs an installed `blender` executable; set `LBA_BLENDER` to a different executable path if needed. On the web, choose the LBA1 game folder containing BODY.HQR, ANIM.HQR, FILE3D.HQR and RESS.HQR, then use **Export GLB**. The archives stay in browser memory and are not sent to the host. The hosted viewer is at https://jvetulani.github.io/LBAModelViewer/.
 
 The web build cannot create `.blend` files directly because Blender is a desktop application. To turn a downloaded GLB into an editable Eevee scene, run:
 

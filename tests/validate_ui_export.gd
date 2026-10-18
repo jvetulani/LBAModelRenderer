@@ -29,6 +29,16 @@ func _run() -> void:
 	if ui.dither_mode.get_selected_id() != 2:
 		_fail("Dithered model is not the default shading choice")
 		return
+	ui.dither_changed.emit(3)
+	var viewer: CharacterViewer = main.get_node("CharacterViewer")
+	var character_material: ShaderMaterial = viewer.character.get_node("Polygons").material_override
+	if platform_material.get_shader_parameter("dither_mode") != 3 or character_material.get_shader_parameter("dither_mode") != 3:
+		_fail("Modern smooth did not reach both the platform and character")
+		return
+	ui.dither_changed.emit(2)
+	if platform_material.get_shader_parameter("dither_mode") != 2:
+		_fail("Dithered mode did not restore the platform shading")
+		return
 	var exporter: ExportController = main.get_node("ExportController")
 	exporter._export("glb", "/tmp/lba1-ui-grobo.glb")
 	if not FileAccess.file_exists("/tmp/lba1-ui-grobo.glb"):

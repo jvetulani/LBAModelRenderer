@@ -47,8 +47,8 @@ func _ready() -> void:
 	set_animations([])
 	if OS.has_feature("web"):
 		source_field.editable = false
-		source_field.placeholder_text = "Choose BODY.HQR, ANIM.HQR, FILE3D.HQR and RESS.HQR"
-		browse_button.text = "Choose HQR files"
+		source_field.placeholder_text = "Choose your LBA1 game folder"
+		browse_button.text = "Choose folder"
 		blender_button.hide()
 
 

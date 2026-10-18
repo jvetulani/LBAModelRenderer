@@ -4,6 +4,7 @@ extends Node3D
 @onready var viewer: CharacterViewer = $CharacterViewer
 @onready var orbit_camera: OrbitCamera = $OrbitCamera
 @onready var stand_point: Marker3D = $CharacterStandPoint
+@onready var display_platform: DisplayPlatform = $DisplayBlock
 @onready var web_picker: WebArchivePicker = $WebArchivePicker
 
 var _web_archives: Dictionary = {}
@@ -16,6 +17,8 @@ func _ready() -> void:
 	web_picker.archives_ready.connect(_on_archives_ready)
 	web_picker.failed.connect(ui.set_status)
 	ui.dither_changed.connect(viewer.set_dither_mode)
+	ui.dither_changed.connect(display_platform.set_dither_mode)
+	display_platform.set_dither_mode(ui.dither_mode.get_selected_id())
 	ui.animation_selected.connect(_select_animation)
 	ui.play_changed.connect(viewer.set_playing)
 	ui.speed_changed.connect(viewer.set_speed)
@@ -35,7 +38,7 @@ func _ready() -> void:
 
 func _load_source(directory: String, body_index: int) -> void:
 	if OS.has_feature("web") and _web_archives.is_empty():
-		ui.set_status("Choose the four LBA1 HQR archives first.")
+		ui.set_status("Choose your LBA1 game folder first.")
 		return
 	if not OS.has_feature("web") and directory.is_empty():
 		ui.set_status("Choose a local LBA1 installation folder first.")
@@ -54,8 +57,9 @@ func _load_source(directory: String, body_index: int) -> void:
 		_select_animation(first_animation)
 
 
-func _on_archives_ready(archives: Dictionary) -> void:
+func _on_archives_ready(archives: Dictionary, folder_name: String) -> void:
 	_web_archives = archives
+	ui.set_source(folder_name, ui.body_index())
 	_load_source("", ui.body_index())
 
 
