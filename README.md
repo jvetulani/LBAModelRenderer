@@ -2,6 +2,8 @@
 
 View and export character models and animations from **Little Big Adventure 1**, **Little Big Adventure 2**, and the **1996 LBA2 demo**. [Open the web viewer](https://jvetulani.github.io/LBAModelRenderer/) or run the Godot project locally.
 
+Shareable character sheets: [LBA1](showcase/lba1-characters.png) and [LBA2](showcase/lba2-characters.png). Each shows 20 selected BODY entries rendered in the viewer, labeled by entry number.
+
 Choose your own game folder in the viewer. The project does not include game archives. The web viewer reads those files in your browser; it does not upload them. GLB and Blender export details are in [docs/export.md](docs/export.md).
 
 To share a model from an HTTPS archive folder, enter the folder URL in the source field and load a BODY entry, then press **Copy link**. The link includes the selected BODY entry and animation. You can also use `?link=<encoded-folder-url>&body=4&anim=23` or `/link=<encoded-folder-url>?body=4&anim=23`. The folder must serve `BODY.HQR`, `ANIM.HQR`, and `RESS.HQR` directly, with browser cross-origin access enabled; `FILE3D.HQR` is optional. Local folders cannot be shared as links.
