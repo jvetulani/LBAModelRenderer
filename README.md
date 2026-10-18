@@ -8,7 +8,7 @@ Choose your own game folder in the viewer. The project does not include game arc
 
 To share a model from an HTTPS archive folder, enter the folder URL in the source field and load a BODY entry, then press **Copy link**. The link includes the selected BODY entry and animation. You can also use `?link=<encoded-folder-url>&body=4&anim=23` or `/link=<encoded-folder-url>?body=4&anim=23`. The folder must serve `BODY.HQR`, `ANIM.HQR`, and `RESS.HQR` directly, with browser cross-origin access enabled; `FILE3D.HQR` is optional. Local folders cannot be shared as links.
 
-The preview defaults to **Soft dither**, which follows each model through animation and fades to smooth shading when the pattern becomes too fine to display. **Strong dither**, **Modern smooth**, and **Dither off** remain available in the shading menu. The interface uses the [Short Stack font](assets/ui/fonts/OFL.txt) under the SIL Open Font License.
+The preview defaults to **Soft dither**, which follows each model through animation and fades to smooth shading when the pattern becomes too fine to display. **Original palette** uses the source material tags, palette bands, and dithered faces; its fixed light direction and scanline pattern remain approximate. **Strong dither**, **Modern smooth**, and **Dither off** are also available. A toggleable ground grid scrolls with animation root movement and fades away from the model. The interface uses the [Short Stack font](assets/ui/fonts/OFL.txt) under the SIL Open Font License.
 
 ## Help improve it
 

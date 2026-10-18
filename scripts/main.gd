@@ -26,6 +26,7 @@ func _ready() -> void:
 	ui.platform_visible_changed.connect(func(visible: bool) -> void: display_platform.visible = visible)
 	ui.shadow_visible_changed.connect(viewer.set_shadow_visible)
 	ui.wireframe_visible_changed.connect(viewer.set_wireframe_visible)
+	ui.motion_grid_visible_changed.connect(viewer.set_motion_grid_visible)
 	ui.lba2_palette_selected.connect(_select_lba2_palette)
 	display_platform.set_dither_mode(ui.dither_mode.get_selected_id())
 	ui.animation_selected.connect(_select_animation)

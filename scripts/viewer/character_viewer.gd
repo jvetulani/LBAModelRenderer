@@ -5,6 +5,8 @@ const LBA2_BODY = preload("res://scripts/import/lba2_body_decoder.gd")
 const LBA2_FILE3D = preload("res://scripts/import/lba2_file3d_decoder.gd")
 const LBA2_PALETTE = preload("res://scripts/import/lba2_palette_decoder.gd")
 const LBA2_POSE = preload("res://scripts/animation/lba2_pose.gd")
+const LBA1_SAIL_REPAIR = preload("res://scripts/animation/lba1_sail_repair.gd")
+const MOTION_GRID_SHADER = preload("res://shaders/motion_grid.gdshader")
 const LBA2_OVERRIDES = preload("res://scripts/render/lba2_model_overrides.gd")
 
 signal playback_frame_changed(frame_index: int, frame_count: int, duration_ticks: int)
@@ -23,6 +25,10 @@ var _archives := {}
 var _palette := PackedByteArray()
 var _lba2_palette_index := 42
 var game := ""
+var _body_index := 0
+var _motion_grid: MeshInstance3D
+var _motion_grid_enabled := true
+var _root_motion_accumulated := Vector3.ZERO
 var _shadow: MeshInstance3D
 var _shadow_sprite: Dictionary = {}
 var _shadow_enabled := true
@@ -117,8 +123,13 @@ func _load_body(body_index: int) -> Dictionary:
 			remove_child(_shadow)
 		_shadow.queue_free()
 	_shadow = null
+	_root_motion_accumulated = Vector3.ZERO
+	_ensure_motion_grid()
+	_motion_grid.position = stand_position - Vector3.UP * 0.01
+	_motion_grid.visible = false
 	_palette = palette_data["palette"]
 	game = "LBA2" if is_lba2 else ("LBA2-96" if is_demo else "LBA1")
+	_body_index = body_index
 	_shadow_sprite = {}
 	body = decoded
 	animation = {}
@@ -213,6 +224,49 @@ func set_wireframe_visible(visible: bool) -> void:
 		_apply_pose(_current_frame, next_frame, _phase_ticks / float(duration))
 
 
+func set_motion_grid_visible(visible: bool) -> void:
+	_motion_grid_enabled = visible
+	if animation.is_empty():
+		_update_motion_grid(0, 0, 0.0)
+	else:
+		var next_frame := _next_frame(_current_frame)
+		var duration: int = animation["frames"][next_frame]["duration_ticks"]
+		_update_motion_grid(_current_frame, next_frame, _phase_ticks / float(duration))
+
+
+func _ensure_motion_grid() -> void:
+	if is_instance_valid(_motion_grid):
+		return
+	_motion_grid = MeshInstance3D.new()
+	_motion_grid.name = "MotionGrid"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(8.0, 8.0)
+	_motion_grid.mesh = plane
+	var material := ShaderMaterial.new()
+	material.shader = MOTION_GRID_SHADER
+	_motion_grid.material_override = material
+	add_child(_motion_grid)
+
+
+func _update_motion_grid(source_frame: int, target_frame: int, weight: float) -> void:
+	if not is_instance_valid(_motion_grid):
+		return
+	var has_motion := false
+	if not animation.is_empty():
+		for frame in animation["frames"]:
+			var step: Vector3i = frame["root_step"]
+			if step.x != 0 or step.z != 0:
+				has_motion = true
+				break
+	_motion_grid.visible = _motion_grid_enabled and has_motion
+	if not _motion_grid.visible:
+		return
+	var travel := _root_motion_accumulated
+	if target_frame != source_frame:
+		travel += Vector3(animation["frames"][target_frame]["root_step"]) * weight
+	(_motion_grid.material_override as ShaderMaterial).set_shader_parameter("travel", Vector2(travel.x, travel.z) * CharacterMeshBuilder.UNIT_SCALE)
+
+
 func _find_animations(body_index: int) -> Array:
 	if game == "LBA2":
 		var file3d := _read_entry("RESS.HQR", 44)
@@ -287,11 +341,16 @@ func _find_animations(body_index: int) -> Array:
 			if not animation_data["ok"]:
 				continue
 			seen[archive_index] = true
+			var action_name := LBA1File3DDecoder.animation_name(anim_record["generic_id"])
+			# The catamaran's side-movement actions share all joint poses with
+			# Back up. Their distinct X root steps are the only authored change.
+			if body_index == LBA1_SAIL_REPAIR.BODY_INDEX and anim_record["generic_id"] in [124, 125]:
+				action_name = "Move left" if anim_record["generic_id"] == 124 else "Move right"
 			found.append({
 				"archive_index": archive_index,
 				"generic_id": anim_record["generic_id"],
 				"file3d_index": file3d_index,
-				"name": LBA1File3DDecoder.animation_name(anim_record["generic_id"]),
+				"name": action_name,
 			})
 	return found
 
@@ -302,12 +361,13 @@ func select_animation(archive_index: int) -> Dictionary:
 	var resource := _read_entry("ANIM.HQR", archive_index)
 	if not resource["ok"]:
 		return resource
-	var decoded := LBA1AnimationDecoder.decode(resource["data"])
+	var decoded := _decode_animation(archive_index, resource["data"])
 	if not decoded["ok"]:
 		return decoded
 	animation = decoded
 	_current_frame = 0
 	_phase_ticks = 0.0
+	_root_motion_accumulated = Vector3.ZERO
 	_master_rotation_offset = Vector3.ZERO
 	_finished_one_shot = false
 	playing = true
@@ -324,11 +384,21 @@ func export_input() -> Dictionary:
 		var resource := _read_entry("ANIM.HQR", entry["archive_index"])
 		if not resource["ok"]:
 			return {"ok": false, "error": "ANIM #%d: %s" % [entry["archive_index"], resource["error"]]}
-		var decoded := LBA1AnimationDecoder.decode(resource["data"])
+		var decoded := _decode_animation(entry["archive_index"], resource["data"])
 		if not decoded["ok"]:
 			return {"ok": false, "error": "ANIM #%d: %s" % [entry["archive_index"], decoded["error"]]}
 		clips.append({"archive_index": entry["archive_index"], "name": entry["name"], "animation": decoded})
 	return {"ok": true, "body": body, "palette": _palette, "shadow": _shadow_sprite if _shadow_enabled else {}, "clips": clips, "game": game}
+
+
+func _decode_animation(archive_index: int, bytes: PackedByteArray) -> Dictionary:
+	var decoded := LBA1AnimationDecoder.decode(bytes)
+	if not decoded["ok"] or not LBA1_SAIL_REPAIR.needs_repair(_body_index, body, archive_index):
+		return decoded
+	var sailing_entry := _read_entry("ANIM.HQR", LBA1_SAIL_REPAIR.SAILING_ANIMATION)
+	if not sailing_entry["ok"]:
+		return decoded
+	return LBA1_SAIL_REPAIR.repair(decoded, LBA1AnimationDecoder.decode(sailing_entry["data"]))
 
 
 func set_dither_mode(mode: int) -> void:
@@ -343,6 +413,7 @@ func set_playing(value: bool) -> void:
 	if value and _finished_one_shot:
 		_current_frame = 0
 		_phase_ticks = 0.0
+		_root_motion_accumulated = Vector3.ZERO
 		_master_rotation_offset = Vector3.ZERO
 		_finished_one_shot = false
 		_apply_pose(0, 0, 1.0)
@@ -358,6 +429,9 @@ func scrub_to(frame_index: int) -> void:
 	if animation.is_empty():
 		return
 	_current_frame = clampi(frame_index, 0, animation["frame_count"] - 1)
+	_root_motion_accumulated = Vector3.ZERO
+	for step_index in range(1, _current_frame + 1):
+		_root_motion_accumulated += Vector3(animation["frames"][step_index]["root_step"])
 	_phase_ticks = 0.0
 	_master_rotation_offset = Vector3.ZERO
 	_finished_one_shot = false
@@ -387,6 +461,7 @@ func _process(delta: float) -> void:
 			var loop_rotation := CharacterPose.master_rotation_units(animation, next_frame, next_frame, 1.0)
 			_master_rotation_offset += (last_rotation - loop_rotation) * angle_scale
 		_current_frame = next_frame
+		_root_motion_accumulated += Vector3(animation["frames"][next_frame]["root_step"])
 		next_frame = _next_frame(_current_frame)
 		duration = animation["frames"][next_frame]["duration_ticks"]
 		_emit_frame()
@@ -402,6 +477,7 @@ func _apply_pose(source_frame: int, target_frame: int, weight: float) -> void:
 	CharacterMeshBuilder.update_pose(character, body, pose)
 	var rotation: Vector3 = pose["master_rotation"] + _master_rotation_offset
 	character.basis = Basis(Vector3.RIGHT, rotation.x) * Basis(Vector3.BACK, rotation.z) * Basis(Vector3.UP, rotation.y)
+	_update_motion_grid(source_frame, target_frame, weight)
 
 
 func _emit_frame() -> void:

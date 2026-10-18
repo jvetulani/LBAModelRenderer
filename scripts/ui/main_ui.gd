@@ -16,6 +16,7 @@ signal export_requested(format: String, destination: String)
 signal platform_visible_changed(visible: bool)
 signal shadow_visible_changed(visible: bool)
 signal wireframe_visible_changed(visible: bool)
+signal motion_grid_visible_changed(visible: bool)
 signal lba2_palette_selected(index: int)
 signal share_requested
 
@@ -40,6 +41,8 @@ signal share_requested
 @onready var platform_label: Label = $Screen/PlatformLabel
 @onready var wireframe_toggle: CheckButton = $Screen/WireframeToggle
 @onready var wireframe_label: Label = $Screen/WireframeLabel
+@onready var motion_grid_toggle: CheckButton = $Screen/MotionGridToggle
+@onready var motion_grid_label: Label = $Screen/MotionGridLabel
 
 var _syncing_frame := false
 var _has_animation := false
@@ -62,9 +65,11 @@ func _ready() -> void:
 	platform_toggle.toggled.connect(func(visible: bool) -> void: platform_visible_changed.emit(visible))
 	shadow_toggle.toggled.connect(func(visible: bool) -> void: shadow_visible_changed.emit(visible))
 	wireframe_toggle.toggled.connect(func(visible: bool) -> void: wireframe_visible_changed.emit(visible))
+	motion_grid_toggle.toggled.connect(func(visible: bool) -> void: motion_grid_visible_changed.emit(visible))
 	_bind_switch_color(platform_toggle, platform_label)
 	_bind_switch_color(shadow_toggle, shadow_label)
 	_bind_switch_color(wireframe_toggle, wireframe_label)
+	_bind_switch_color(motion_grid_toggle, motion_grid_label)
 	palette_list.item_selected.connect(func(index: int) -> void: lba2_palette_selected.emit(palette_list.get_item_id(index)))
 	$Screen/TopPanel/Vertical/SourceRow/ExportGLBButton.pressed.connect(func() -> void: _request_export("glb"))
 	blender_button.pressed.connect(func() -> void: _request_export("blend"))

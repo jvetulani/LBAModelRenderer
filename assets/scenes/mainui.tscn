@@ -169,7 +169,7 @@ theme_override_styles/pressed = SubResource("PressedStyle")
 [node name="DitherMode" type="OptionButton" parent="Screen/TopPanel/Vertical/SourceRow"]
 layout_mode = 2
 selected = 1
-item_count = 4
+item_count = 5
 popup/item_0/text = "Dither off"
 popup/item_0/id = 0
 popup/item_1/text = "Soft dither"
@@ -178,7 +178,9 @@ popup/item_2/text = "Strong dither"
 popup/item_2/id = 2
 popup/item_3/text = "Modern smooth"
 popup/item_3/id = 3
-tooltip_text = "Soft dither follows the model and fades at small sizes. Strong dither shows the original full-strength preview pattern."
+popup/item_4/text = "Original palette"
+popup/item_4/id = 1
+tooltip_text = "Original palette uses source-style palette bands and dithered faces; lighting remains approximate. Soft and strong dither use the gentler preview light curve."
 theme_override_colors/font_color = Color(0.98, 0.68, 0.075, 1)
 theme_override_colors/font_pressed_color = Color(0.12, 0.10, 0.02, 1)
 theme_override_styles/pressed = SubResource("PressedStyle")
@@ -325,14 +327,44 @@ theme_override_icons/checked = SubResource("ToggleOnCropped")
 theme_override_icons/unchecked = SubResource("ToggleOffCropped")
 theme_override_colors/font_pressed_color = Color(0.98, 0.68, 0.075, 1)
 
+[node name="MotionGridLabel" type="Label" parent="Screen"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -220.0
+offset_top = 338.0
+offset_right = -88.0
+offset_bottom = 384.0
+vertical_alignment = 1
+horizontal_alignment = 2
+text = "Motion grid"
+theme_override_font_sizes/font_size = 18
+
+[node name="MotionGridToggle" type="CheckButton" parent="Screen"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -80.0
+offset_top = 338.0
+offset_right = -12.0
+offset_bottom = 384.0
+custom_minimum_size = Vector2(68, 46)
+button_pressed = true
+theme_override_constants/icon_max_width = 68
+theme_override_styles/normal = SubResource("NoSwitchFrame")
+theme_override_styles/hover = SubResource("NoSwitchFrame")
+theme_override_styles/pressed = SubResource("NoSwitchFrame")
+theme_override_icons/checked = SubResource("ToggleOnCropped")
+theme_override_icons/unchecked = SubResource("ToggleOffCropped")
+
 [node name="LBA2Palette" type="OptionButton" parent="Screen"]
 layout_mode = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -212.0
-offset_top = 338.0
+offset_top = 396.0
 offset_right = -12.0
-offset_bottom = 378.0
+offset_bottom = 436.0
 selected = 0
 item_count = 12
 popup/item_0/text = "Citadel · clear/indoors"
