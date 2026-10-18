@@ -27,6 +27,9 @@ func _validate() -> void:
 		var last: int = first["entry_count"] - 1
 		scene.call("_load_source", source, last)
 		assert(ui.body_index() == 0, "Changing the source must reset to BODY #0")
+		if source != LBA2:
+			var material: ShaderMaterial = scene.get_node("CharacterViewer").character.get_node("Polygons").material_override
+			assert(is_equal_approx(float(material.get_shader_parameter("palette_ramp_size")), 16.0), "Soft shading must not cross palette ramps")
 		ui._step_body(-1)
 		assert(ui.body_index() == last, "Previous from BODY #0 must wrap to last")
 		ui._step_body(1)

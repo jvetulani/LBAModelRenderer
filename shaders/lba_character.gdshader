@@ -6,7 +6,7 @@ uniform sampler2D texture_atlas : filter_nearest, repeat_disable;
 uniform sampler2D shade_table : filter_nearest, repeat_disable;
 uniform bool has_texture_atlas = false;
 uniform bool has_shade_table = false;
-// The 1996 LBA2 demo uses LBA2's 16-colour ramps inside an LBA1-style BODY.
+// Soft preview shading stays inside the source palette's 16-colour ramps.
 uniform float palette_ramp_size = 0.0;
 uniform float normal_light_level = 12.0;
 uniform int palette_index_override = -1;
