@@ -1,0 +1,20 @@
+shader_type spatial;
+render_mode unshaded, blend_mix, cull_back, depth_draw_never;
+
+uniform sampler2D palette_texture : source_color, filter_nearest, repeat_disable;
+uniform float opacity : hint_range(0.0, 1.0) = 0.42;
+
+void fragment() {
+	float palette_index = clamp(round(UV2.x), 0.0, 255.0);
+	ALBEDO = texture(palette_texture, vec2((palette_index + 0.5) / 256.0, 0.5)).rgb;
+	if (round(UV2.y) == 3.0) {
+		float cell = max(1.0, floor(VIEWPORT_SIZE.y / 720.0 + 0.5));
+		vec2 pixel = floor(FRAGCOORD.xy / cell);
+		if (mod(pixel.x + pixel.y, 2.0) < 1.0) {
+			discard;
+		}
+		ALPHA = 1.0;
+	} else {
+		ALPHA = opacity;
+	}
+}

@@ -30,6 +30,7 @@ shader_parameter/use_mesh_lighting = true
 shader_parameter/mesh_light_span = 7.0
 shader_parameter/dither_mode = 2
 shader_parameter/dither_pixel_scale = 1.0
+shader_parameter/platform_style = true
 shader_parameter/source_light_vector = Vector3(-25.8, 37.6, 37.6)
 
 [sub_resource type="Environment" id="Environment_stage"]

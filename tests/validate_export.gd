@@ -11,7 +11,7 @@ func _init() -> void:
 		return
 	var viewer := CharacterViewer.new()
 	root.add_child(viewer)
-	for body_index in [17, 0]:
+	for body_index in [17, 0, 30]:
 		var loaded := viewer.load_body(source, body_index)
 		if not loaded["ok"]:
 			_fail(loaded["error"])

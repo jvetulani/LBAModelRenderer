@@ -12,12 +12,20 @@ func _capture() -> void:
 	var body_index := 0
 	var capture_size := Vector2i(1280, 720)
 	var hide_ui := false
+	var hide_glass := false
+	var hide_opaque := false
+	var hide_platform := false
 	var dither_mode := 2
 	var animation_index := -1
 	var animation_frame := -1
+	var palette_index := -1
+	var static_pose := false
+	var wireframe := false
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--lba1="):
 			game_path = argument.trim_prefix("--lba1=")
+		elif argument.begins_with("--lba2="):
+			game_path = argument.trim_prefix("--lba2=")
 		elif argument.begins_with("--output="):
 			output_path = argument.trim_prefix("--output=")
 		elif argument.begins_with("--yaw="):
@@ -30,6 +38,12 @@ func _capture() -> void:
 				capture_size = Vector2i(int(dimensions[0]), int(dimensions[1]))
 		elif argument == "--hide-ui":
 			hide_ui = true
+		elif argument == "--hide-glass":
+			hide_glass = true
+		elif argument == "--hide-opaque":
+			hide_opaque = true
+		elif argument == "--hide-platform":
+			hide_platform = true
 		elif argument == "--dither=off":
 			dither_mode = 0
 		elif argument == "--dither=source":
@@ -40,8 +54,14 @@ func _capture() -> void:
 			animation_index = int(argument.trim_prefix("--anim-index="))
 		elif argument.begins_with("--anim-frame="):
 			animation_frame = int(argument.trim_prefix("--anim-frame="))
+		elif argument.begins_with("--palette-index="):
+			palette_index = int(argument.trim_prefix("--palette-index="))
+		elif argument == "--static":
+			static_pose = true
+		elif argument == "--wireframe":
+			wireframe = true
 	if game_path.is_empty() or output_path.is_empty():
-		push_error("Pass --lba1=PATH and --output=PATH after --")
+		push_error("Pass --lba1=PATH or --lba2=PATH and --output=PATH after --")
 		quit(1)
 		return
 	var viewport := SubViewport.new()
@@ -53,11 +73,29 @@ func _capture() -> void:
 	var orbit_camera: OrbitCamera = scene.get_node("OrbitCamera")
 	orbit_camera.yaw = deg_to_rad(yaw_degrees)
 	orbit_camera._update_pose()
-	scene.call("_load_source", game_path, body_index)
+	scene.call("_load_source", game_path, 0)
+	if body_index != 0:
+		scene.call("_load_source", game_path, body_index)
+	if hide_platform:
+		scene.get_node("DisplayBlock").hide()
 	var viewer: CharacterViewer = scene.get_node("CharacterViewer")
 	var ui: MainUI = scene.get_node("MainUI")
+	if static_pose:
+		var static_result := viewer.load_body(game_path, body_index)
+		if not static_result["ok"]:
+			push_error(static_result["error"])
+			quit(1)
+			return
+		orbit_camera.frame_points(static_result["points"], scene.get_node("CharacterStandPoint").position)
+	if palette_index >= 0:
+		var palette_result := viewer.select_lba2_palette(palette_index)
+		if not palette_result["ok"]:
+			push_error(palette_result["error"])
+			quit(1)
+			return
 	ui.set_source(game_path, body_index)
 	viewer.set_dither_mode(dither_mode)
+	viewer.set_wireframe_visible(wireframe)
 	if animation_index >= 0:
 		var selected := viewer.select_animation(animation_index)
 		if not selected["ok"]:
@@ -81,6 +119,10 @@ func _capture() -> void:
 		quit(1)
 		return
 	var polygon_mesh: MeshInstance3D = character.get_node("Polygons")
+	if hide_opaque:
+		polygon_mesh.hide()
+	if hide_glass and character.has_node("TranslucentPolygons"):
+		character.get_node("TranslucentPolygons").hide()
 	print("Viewer mesh vertices: ", polygon_mesh.mesh.surface_get_array_len(0))
 	print("Character child meshes: ", character.get_child_count())
 	print("Status: ", ui.status_label.text)

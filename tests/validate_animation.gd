@@ -74,7 +74,24 @@ func _init() -> void:
 	if viewer.get("_current_frame") != 2:
 		_fail("Walk frame scrubbing did not reach keyframe 2")
 		return
-	print("PASS: Grobo associations, keyframes, interpolation, playback, scrubbing, source shadow, malformed animation")
+	var one_shot_entry := HQRReader.read_entry(source.path_join("ANIM.HQR"), 178)
+	var one_shot := LBA1AnimationDecoder.decode(one_shot_entry["data"])
+	if not one_shot["ok"] or one_shot["frame_count"] != 2 or one_shot["loop_frame"] != 2:
+		_fail("ANIM #178 one-shot loop marker did not decode")
+		return
+	if not viewer.load_body(source, 30)["ok"] or not viewer.select_animation(178)["ok"]:
+		_fail("BODY #30 could not select its one-shot action")
+		return
+	for step in range(100):
+		viewer._process(0.25)
+	if viewer.playing or viewer.get("_current_frame") != 1:
+		_fail("One-shot action did not stop on its last frame")
+		return
+	viewer.set_playing(true)
+	if not viewer.playing or viewer.get("_current_frame") != 0:
+		_fail("One-shot action did not restart after Play")
+		return
+	print("PASS: Grobo animation and BODY #30 one-shot playback")
 	quit(0)
 
 

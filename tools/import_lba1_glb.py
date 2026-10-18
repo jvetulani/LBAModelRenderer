@@ -1,9 +1,13 @@
-"""Import an LBA1 viewer GLB, rebuild its Eevee palette material, save a .blend.
+"""Import an LBA viewer GLB, rebuild its Eevee palette material, save a .blend.
 
 Run with: blender -b --factory-startup --python tools/import_lba1_glb.py -- input.glb output.blend
 """
 
 import sys
+import json
+import struct
+import tempfile
+from pathlib import Path
 
 import bpy
 from mathutils import Vector
@@ -13,6 +17,36 @@ def input_paths():
     if "--" not in sys.argv or len(sys.argv[sys.argv.index("--") + 1 :]) != 2:
         raise SystemExit("Usage: blender -b --python tools/import_lba1_glb.py -- INPUT.glb OUTPUT.blend")
     return sys.argv[sys.argv.index("--") + 1 :]
+
+
+def repair_embedded_glb_images(source_path):
+    """Blender 5.0 can leave valid embedded GLB PNGs as empty image datablocks."""
+    data = Path(source_path).read_bytes()
+    if data[:4] != b"glTF":
+        raise RuntimeError("Input is not a binary glTF file")
+    json_size = struct.unpack_from("<I", data, 12)[0]
+    document = json.loads(data[20 : 20 + json_size])
+    binary_start = 20 + json_size + 8
+    with tempfile.TemporaryDirectory(prefix="lba-glb-images-") as folder:
+        for image_info in document.get("images", []):
+            old = bpy.data.images.get(image_info.get("name", ""))
+            if old is None or "bufferView" not in image_info:
+                continue
+            view = document["bufferViews"][image_info["bufferView"]]
+            start = binary_start + view.get("byteOffset", 0)
+            end = start + view["byteLength"]
+            path = Path(folder) / f"image-{image_info['bufferView']}.png"
+            path.write_bytes(data[start:end])
+            loaded = bpy.data.images.load(str(path), check_existing=False)
+            if loaded.size[0] == 0:
+                raise RuntimeError(f"Embedded image {old.name} could not be loaded")
+            loaded.pack(data=data[start:end], data_len=view["byteLength"])
+            for material in bpy.data.materials:
+                if material.node_tree:
+                    for node in material.node_tree.nodes:
+                        if node.type == "TEX_IMAGE" and node.image == old:
+                            node.image = loaded
+            bpy.data.images.remove(old)
 
 
 def math_node(nodes, operation, first, second, label):
@@ -129,8 +163,46 @@ def reconstruct_palette_material(mesh_obj, palette_image):
     links.new(palette.outputs["Color"], emission.inputs["Color"])
     output = nodes.new("ShaderNodeOutputMaterial")
     links.new(emission.outputs[0], output.inputs["Surface"])
-    mesh_obj.data.materials.clear()
-    mesh_obj.data.materials.append(material)
+    # The first GLB surface is palette shaded. Keep later LBA2 texture surfaces.
+    if not mesh_obj.data.materials:
+        raise RuntimeError("Character mesh has no palette material slot")
+    mesh_obj.data.materials[0] = material
+
+
+def reconstruct_platform_material():
+    """Keep the viewer's yellow top and shadowed orange rim editable in Eevee."""
+    global links
+    material = bpy.data.materials.new("LBA Display Platform · warm shade")
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    nodes.clear()
+    links = material.node_tree.links
+    geometry = nodes.new("ShaderNodeNewGeometry")
+    position = nodes.new("ShaderNodeSeparateXYZ")
+    normal = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(geometry.outputs["Position"], position.inputs[0])
+    links.new(geometry.outputs["Normal"], normal.inputs[0])
+    height = nodes.new("ShaderNodeMapRange")
+    height.inputs["From Min"].default_value = -0.105
+    height.inputs["From Max"].default_value = -0.005
+    links.new(position.outputs["Z"], height.inputs["Value"])
+    side_level = math_node(nodes, "ADD", math_node(nodes, "MULTIPLY", height.outputs["Result"], 0.56, "Rim height"), 0.26, "Warm rim light")
+    is_top = math_node(nodes, "GREATER_THAN", normal.outputs["Z"], 0.7, "Yellow top")
+    level = nodes.new("ShaderNodeMix")
+    level.data_type = "FLOAT"
+    links.new(is_top, level.inputs[0])
+    links.new(side_level, level.inputs[2])
+    level.inputs[3].default_value = 0.96
+    colors = nodes.new("ShaderNodeMix")
+    colors.data_type = "RGBA"
+    links.new(level.outputs[0], colors.inputs[0])
+    colors.inputs[6].default_value = (0.42, 0.15, 0.015, 1.0)
+    colors.inputs[7].default_value = (0.98, 0.68, 0.075, 1.0)
+    emission = nodes.new("ShaderNodeEmission")
+    links.new(colors.outputs[2], emission.inputs["Color"])
+    output = nodes.new("ShaderNodeOutputMaterial")
+    links.new(emission.outputs[0], output.inputs["Surface"])
+    return material
 
 
 def make_all_actions_cyclic():
@@ -153,14 +225,15 @@ def main():
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     bpy.ops.import_scene.gltf(filepath=source_path)
+    repair_embedded_glb_images(source_path)
     helper_collection = bpy.data.collections.get("glTF_not_exported")
     if helper_collection:
         for imported_helper in list(helper_collection.objects):
             bpy.data.objects.remove(imported_helper, do_unlink=True)
     character = bpy.data.objects.get("CharacterMesh")
     shadow = bpy.data.objects.get("LBA1ActorShadow")
-    if character is None or shadow is None:
-        raise RuntimeError("GLB does not contain the expected LBA1 character and shadow")
+    if character is None:
+        raise RuntimeError("GLB does not contain the expected character mesh")
     images = [image for image in bpy.data.images if image.size[:] == (256, 1)]
     if len(images) != 1:
         raise RuntimeError("GLB must contain one embedded 256-color palette")
@@ -172,17 +245,20 @@ def main():
     scene.view_settings.view_transform = "Standard"
     scene.view_settings.look = "None"
     reconstruct_palette_material(character, images[0])
+    for texture_material in character.data.materials[1:]:
+        if texture_material and texture_material.use_nodes:
+            for node in texture_material.node_tree.nodes:
+                if node.type == "TEX_IMAGE" and node.image:
+                    node.interpolation = "Closest"
+                    node.extension = "REPEAT"
+                    if not node.image.packed_file:
+                        node.image.pack()
 
     bpy.ops.object.select_all(action="DESELECT")
     bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=0.75, depth=0.10, location=(0, 0, -0.055))
     platform = bpy.context.object
     platform.name = "DisplayPlatform"
-    platform.data.materials.append(character.data.materials[0])
-    platform_light = Vector((-25.8, -37.6, 37.6)).normalized()
-    for polygon in platform.data.polygons:
-        shade = max(polygon.normal.dot(platform_light), 0.0) * 7.0
-        for loop_index in polygon.loop_indices:
-            platform.data.uv_layers.active.data[loop_index].uv = ((240.0 + shade + 0.5) / 256.0, 9.5 / 16.0)
+    platform.data.materials.append(reconstruct_platform_material())
 
     camera_data = bpy.data.cameras.new("Orbit preview camera")
     camera = bpy.data.objects.new("Orbit preview camera", camera_data)
@@ -199,7 +275,7 @@ def main():
     # the first one; all source-associated actions remain available in the file.
     armatures = [obj for obj in bpy.data.objects if obj.type == "ARMATURE"]
     if len(armatures) != 1 or not bpy.data.actions:
-        raise RuntimeError("GLB has no usable LBA1 armature/actions")
+        raise RuntimeError("GLB has no usable armature/actions")
     cyclic_curves = make_all_actions_cyclic()
     if cyclic_curves == 0:
         raise RuntimeError("Imported actions have no curves to cycle")
@@ -211,8 +287,9 @@ def main():
         armature.animation_data.action_slot = idle_actions[0].slots[0]
         scene.frame_set(1)
     scene.render.film_transparent = False
+    bpy.ops.file.pack_all()
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
-    print(f"SAVED {blend_path}: {len(bpy.data.actions)} cyclic clips, {cyclic_curves} cyclic channels, {len(armatures[0].data.bones)} bones, palette and source shadow", flush=True)
+    print(f"SAVED {blend_path}: {len(bpy.data.actions)} cyclic clips, {cyclic_curves} cyclic channels, {len(armatures[0].data.bones)} bones, palette, {len(character.data.materials) - 1} texture materials, shadow={shadow is not None}", flush=True)
 
 
 if __name__ == "__main__":

@@ -9,9 +9,13 @@ signal speed_changed(speed: float)
 signal scrubbed(frame_index: int)
 signal archive_files_requested
 signal export_requested(format: String, destination: String)
+signal platform_visible_changed(visible: bool)
+signal shadow_visible_changed(visible: bool)
+signal wireframe_visible_changed(visible: bool)
+signal lba2_palette_selected(index: int)
 
 @onready var source_field: LineEdit = $Screen/TopPanel/Vertical/SourceRow/SourceField
-@onready var body_number: SpinBox = $Screen/TopPanel/Vertical/SourceRow/BodyNumber
+@onready var body_number: LineEdit = $Screen/TopPanel/Vertical/SourceRow/BodyNumber
 @onready var dither_mode: OptionButton = $Screen/TopPanel/Vertical/SourceRow/DitherMode
 @onready var status_label: Label = $Screen/TopPanel/Vertical/Status
 @onready var animation_list: OptionButton = $Screen/AnimationPanel/AnimationRow/AnimationList
@@ -23,21 +27,39 @@ signal export_requested(format: String, destination: String)
 @onready var export_dialog: FileDialog = $Screen/ExportDialog
 @onready var browse_button: Button = $Screen/TopPanel/Vertical/SourceRow/BrowseButton
 @onready var blender_button: Button = $Screen/TopPanel/Vertical/SourceRow/ExportBlenderButton
+@onready var palette_list: OptionButton = $Screen/LBA2Palette
+@onready var shadow_toggle: CheckButton = $Screen/ShadowToggle
 
 var _syncing_frame := false
 var _has_animation := false
 var _playing := false
 var _pending_export := ""
+var _body_entry_count := 0
 
 
 func _ready() -> void:
 	browse_button.pressed.connect(_browse_source)
-	$Screen/TopPanel/Vertical/SourceRow/LoadButton.pressed.connect(request_load)
+	body_number.text_submitted.connect(func(_value: String) -> void: request_load())
+	$Screen/BodyNavigation/PreviousBody.pressed.connect(func() -> void: _step_body(-1))
+	$Screen/BodyNavigation/NextBody.pressed.connect(func() -> void: _step_body(1))
+	$Screen/PlatformToggle.toggled.connect(func(visible: bool) -> void: platform_visible_changed.emit(visible))
+	shadow_toggle.toggled.connect(func(visible: bool) -> void: shadow_visible_changed.emit(visible))
+	$Screen/WireframeToggle.toggled.connect(func(visible: bool) -> void: wireframe_visible_changed.emit(visible))
+	palette_list.item_selected.connect(func(index: int) -> void: lba2_palette_selected.emit(palette_list.get_item_id(index)))
 	$Screen/TopPanel/Vertical/SourceRow/ExportGLBButton.pressed.connect(func() -> void: _request_export("glb"))
 	blender_button.pressed.connect(func() -> void: _request_export("blend"))
 	export_dialog.file_selected.connect(func(path: String) -> void: export_requested.emit(_pending_export, path))
-	folder_dialog.dir_selected.connect(func(path: String) -> void: source_field.text = path)
-	source_field.text_submitted.connect(func(_unused: String) -> void: request_load())
+	folder_dialog.dir_selected.connect(func(path: String) -> void:
+		source_field.text = path
+		body_number.text = "0"
+		_body_entry_count = 0
+		request_load()
+	)
+	source_field.text_submitted.connect(func(_unused: String) -> void:
+		body_number.text = "0"
+		_body_entry_count = 0
+		request_load()
+	)
 	dither_mode.item_selected.connect(func(index: int) -> void: dither_changed.emit(dither_mode.get_item_id(index)))
 	animation_list.item_selected.connect(func(index: int) -> void: animation_selected.emit(animation_list.get_item_id(index)))
 	play_button.pressed.connect(_toggle_play)
@@ -46,10 +68,20 @@ func _ready() -> void:
 	speed_list.select(1)
 	set_animations([])
 	if OS.has_feature("web"):
-		source_field.editable = false
-		source_field.placeholder_text = "Choose your LBA1 game folder"
+		source_field.editable = true
+		source_field.placeholder_text = "Choose your game folder"
 		browse_button.text = "Choose folder"
 		blender_button.hide()
+	set_game("LBA1")
+
+
+func set_game(game_name: String) -> void:
+	palette_list.visible = game_name == "LBA2"
+
+
+func set_shadow_available(available: bool) -> void:
+	shadow_toggle.visible = available
+	shadow_visible_changed.emit(shadow_toggle.button_pressed)
 
 
 func _browse_source() -> void:
@@ -76,15 +108,29 @@ func _request_export(format: String) -> void:
 
 func set_source(directory: String, body_index: int) -> void:
 	source_field.text = directory
-	body_number.value = body_index
+	body_number.text = str(body_index)
+	_body_entry_count = 0
+
+
+func set_body_entry_count(count: int) -> void:
+	_body_entry_count = maxi(count, 0)
 
 
 func request_load() -> void:
-	load_requested.emit(source_field.text.strip_edges(), int(body_number.value))
+	var index := body_index()
+	body_number.text = str(index)
+	load_requested.emit(source_field.text.strip_edges(), index)
 
 
 func body_index() -> int:
-	return int(body_number.value)
+	return clampi(int(body_number.text), 0, _body_entry_count - 1 if _body_entry_count > 0 else 999)
+
+
+func _step_body(direction: int) -> void:
+	if _body_entry_count < 1:
+		return
+	body_number.text = str(posmod(body_index() + direction, _body_entry_count))
+	request_load()
 
 
 func set_status(message: String) -> void:

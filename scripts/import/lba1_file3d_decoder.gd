@@ -9,6 +9,13 @@ const GENERIC_NAMES := {
 	10: "Death", 11: "Action", 12: "Climb", 13: "Ladder", 14: "Jump",
 	15: "Throw", 16: "Hide", 17: "Punch 1", 18: "Punch 2", 19: "Punch 3",
 	20: "Find", 21: "Drown", 22: "Impact 2", 23: "Sword", 24: "Draw sword",
+	25: "Jump left", 26: "Jump right", 27: "Push", 28: "Talk",
+	29: "Dart", 30: "Descend", 31: "Descend ladder", 32: "Dock",
+	33: "Skate", 34: "Skate left", 35: "Blowgun",
+	36: "Right glove", 37: "Left glove", 38: "Laser pistol",
+	39: "Lightning", 40: "Dodge right", 41: "Dodge left",
+	42: "Dodge forward", 43: "Dodge backward", 44: "Fire",
+	45: "Sarbatrón", 46: "Gas", 47: "Labyrinth",
 }
 
 

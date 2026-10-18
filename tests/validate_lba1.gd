@@ -78,6 +78,9 @@ func _init() -> void:
 	if HQRReader.read_entry(lba1_dir.path_join("BODY.HQR"), 9999)["ok"]:
 		_fail("Out-of-range HQR entry was accepted")
 		return
+	if HQRReader.read_entry(lba1_dir.path_join("BODY.HQR"), 132)["ok"]:
+		_fail("The BODY.HQR end-of-file sentinel was accepted as an entry")
+		return
 	var corrupt_path := OS.get_user_data_dir().path_join("invalid_backref.hqr")
 	var corrupt_file := FileAccess.open(corrupt_path, FileAccess.WRITE)
 	if corrupt_file == null:

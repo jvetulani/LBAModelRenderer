@@ -21,6 +21,9 @@ static func read_entry_bytes(archive: PackedByteArray, index: int) -> Dictionary
 	if table_size < 4 or table_size % 4 != 0 or table_size > archive_size:
 		return _error("Invalid HQR offset table size")
 	var entry_count := table_size / 4
+	# These game archives end the offset table with a pointer to EOF.
+	if int(archive.decode_u32(table_size - 4)) == archive_size:
+		entry_count -= 1
 	if index < 0 or index >= entry_count:
 		return _error("HQR entry %d is outside 0..%d" % [index, entry_count - 1])
 

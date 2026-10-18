@@ -2,6 +2,11 @@ shader_type spatial;
 render_mode cull_back, specular_disabled, shadows_disabled;
 
 uniform sampler2D palette_texture : source_color, filter_nearest, repeat_disable;
+uniform sampler2D texture_atlas : filter_nearest, repeat_disable;
+uniform sampler2D shade_table : filter_nearest, repeat_disable;
+uniform bool has_texture_atlas = false;
+uniform bool has_shade_table = false;
+uniform float normal_light_level = 12.0;
 uniform int palette_index_override = -1;
 uniform bool use_mesh_lighting = false;
 uniform float mesh_light_span = 7.0;
@@ -9,6 +14,7 @@ uniform float mesh_light_span = 7.0;
 // 2 = LBA-style dithered shading, 3 = smooth palette interpolation.
 uniform int dither_mode = 2;
 uniform float dither_pixel_scale = 1.0;
+uniform bool platform_style = false;
 // Approximate integer vector from LBA1 SetLightVector(896, 950, 0): a
 // 59-unit light rotated by the game's angle convention. Scene light changes
 // and the original trigonometric lookup table are future work.
@@ -19,8 +25,36 @@ varying flat float source_render_type;
 varying flat float source_base_index;
 varying vec3 pixel_source_normal;
 varying float pixel_light_scale;
+varying float platform_height;
+varying flat vec4 texture_region;
+
+float dither_hash(vec2 coordinate) {
+	return fract(sin(dot(coordinate, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float aperiodic_threshold(vec2 screen_pixel) {
+	return dither_hash(floor(screen_pixel / max(dither_pixel_scale, 1.0)));
+}
+
+float varied_bayer_threshold(vec2 screen_pixel, float cell) {
+	vec2 grid_pixel = floor(screen_pixel / cell);
+	vec2 tile = floor(grid_pixel / 4.0);
+	ivec2 pixel = ivec2(mod(grid_pixel, vec2(4.0)));
+	int rotation = int(floor(dither_hash(tile) * 4.0));
+	if (rotation == 1) {
+		pixel = ivec2(3 - pixel.y, pixel.x);
+	} else if (rotation == 2) {
+		pixel = ivec2(3 - pixel.x, 3 - pixel.y);
+	} else if (rotation == 3) {
+		pixel = ivec2(pixel.y, 3 - pixel.x);
+	}
+	int bayer[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+	return (float(bayer[pixel.y * 4 + pixel.x]) + 0.5) / 16.0;
+}
 
 void vertex() {
+	texture_region = CUSTOM1;
+	platform_height = clamp((VERTEX.y + 0.06) / 0.12, 0.0, 1.0);
 	float base_index = palette_index_override >= 0
 		? float(palette_index_override)
 		: floor(UV2.x + 0.5);
@@ -45,7 +79,40 @@ void vertex() {
 
 void fragment() {
 	float palette_index = floor(source_palette_index);
-	if (dither_mode == 3 && source_render_type >= 7.0) {
+	if (has_texture_atlas && (source_render_type == 12.0 || source_render_type == 13.0 || source_render_type == 14.0 || source_render_type == 16.0 || source_render_type == 20.0 || source_render_type == 24.0)) {
+		// LBA2-96 stores texture coordinates and a repeat region on its
+		// compact LBA1-style polygons. The page remains indexed and unfiltered.
+		vec2 atlas_pixel = mod(texture_region.xy + mod(floor(UV), texture_region.zw + vec2(1.0)), vec2(256.0));
+		float texel = floor(texture(texture_atlas, (atlas_pixel + vec2(0.5)) / 256.0).r * 255.0 + 0.5);
+		if (has_shade_table) {
+			float lighting = length(pixel_source_normal) > 0.0
+				? clamp(source_palette_index - source_base_index, 0.0, 15.0)
+				: normal_light_level;
+			float row = floor(lighting + 0.5);
+			if (dither_mode == 2) {
+				row = floor(lighting) + (fract(lighting) > aperiodic_threshold(FRAGCOORD.xy) ? 1.0 : 0.0);
+			}
+			texel = floor(texture(shade_table, vec2((texel + 0.5) / 256.0, (row + 0.5) / 256.0)).r * 255.0 + 0.5);
+		}
+		ALBEDO = texture(palette_texture, vec2((texel + 0.5) / 256.0, 0.5)).rgb;
+		ROUGHNESS = 1.0;
+	} else if (platform_style) {
+		float lit = max(dot(normalize(pixel_source_normal), normalize(source_light_vector)), 0.0);
+		float level = clamp(0.18 + platform_height * 0.56 + lit * 0.16, 0.0, 1.0);
+		if (pixel_source_normal.y > 0.7) {
+			level = 0.96;
+		}
+		if (dither_mode != 3) {
+			float steps = level * 8.0;
+			float threshold = 0.5;
+			if (dither_mode == 2) {
+				threshold = aperiodic_threshold(FRAGCOORD.xy);
+			}
+			level = (floor(steps) + (fract(steps) > threshold ? 1.0 : 0.0)) / 8.0;
+		}
+		ALBEDO = mix(vec3(0.42, 0.15, 0.015), vec3(0.98, 0.68, 0.075), level);
+		ROUGHNESS = 1.0;
+	} else if (dither_mode == 3 && source_render_type >= 7.0) {
 		float pixel_shade = max(dot(normalize(pixel_source_normal), source_light_vector), 0.0) * pixel_light_scale;
 		float smooth_index = mod(source_base_index + pixel_shade, 256.0);
 		float lower_index = floor(smooth_index);
@@ -63,18 +130,23 @@ void fragment() {
 			// prefix sum is evaluated analytically in short blocks, so each fragment
 			// runs in constant time even at 4K. Original polygon-edge scan conversion
 			// and low-byte rotation still need a matched-game reference.
-			float cell = dither_mode == 1 ? 1.0
-				: max(1.0, floor(VIEWPORT_SIZE.y / 720.0 + 0.5)) * max(dither_pixel_scale, 1.0);
+			float cell = dither_mode == 1 ? 1.0 : max(dither_pixel_scale, 1.0);
 			float cell_x = floor(FRAGCOORD.x / cell);
 			float local_x = mod(cell_x, 64.0);
 			float row = floor(FRAGCOORD.y / cell);
-			float phase = fract(row * 0.61803398875 + floor(cell_x / 64.0) * 0.41421356237);
+			float block = floor(cell_x / 64.0);
+			float phase = fract(row * 0.61803398875 + block * 0.41421356237);
+			if (dither_mode == 2) {
+				float lower = floor(source_palette_index);
+				palette_index = lower + (fract(source_palette_index) > aperiodic_threshold(FRAGCOORD.xy) ? 1.0 : 0.0);
+			} else {
 			float shade = floor(source_palette_index * 256.0) / 256.0;
 			float gradient = dFdx(source_palette_index) * cell;
 			float first = shade - gradient * local_x;
 			float prefix = (local_x + 1.0) * first + gradient * local_x * (local_x + 1.0) * 0.5;
 			float previous = local_x * first + gradient * (local_x - 1.0) * local_x * 0.5;
 			palette_index = floor(prefix + phase) - floor(previous + phase);
+			}
 		}
 		palette_index = mod(palette_index, 256.0);
 		ALBEDO = texture(palette_texture, vec2((palette_index + 0.5) / 256.0, 0.5)).rgb;

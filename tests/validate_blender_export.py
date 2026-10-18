@@ -1,4 +1,4 @@
-"""Reopen and inspect a converted LBA1 Blender file in Blender 5.x."""
+"""Reopen and inspect a converted LBA Blender file in Blender 5.x."""
 
 import sys
 
@@ -12,15 +12,21 @@ bpy.ops.wm.open_mainfile(filepath=path)
 
 character = bpy.data.objects["CharacterMesh"]
 platform = bpy.data.objects["DisplayPlatform"]
-assert platform.data.materials[0] == character.data.materials[0]
-platform_shades = {round(loop.uv.x, 6) for loop in platform.data.uv_layers.active.data}
-assert len(platform_shades) > 3, "Platform has no mesh-normal palette lighting"
-assert bpy.data.objects["LBA1ActorShadow"].type == "MESH"
+platform_material = platform.data.materials[0]
+assert platform_material.name.startswith("LBA Display Platform")
+assert any(node.type == "MIX" and node.data_type == "RGBA" for node in platform_material.node_tree.nodes), "Platform lost its warm color gradient"
+is_lba2 = "LBA1ActorShadow" not in bpy.data.objects
+if is_lba2:
+    assert len(character.data.materials) > 1, "LBA2 textured surfaces were lost"
+    assert any(node.type == "TEX_IMAGE" and node.image and node.interpolation == "Closest" and node.image.packed_file
+               for material in character.data.materials[1:] for node in material.node_tree.nodes)
+else:
+    assert bpy.data.objects["LBA1ActorShadow"].type == "MESH"
 assert any(image.size[:] == (256, 1) and image.packed_file for image in bpy.data.images)
 assert bpy.data.images["LBA1_Dither_4x4"].packed_file
 idle_actions = [action for action in bpy.data.actions if action.name.startswith("Idle_ANIM_")]
 if idle_actions:
-    armature = bpy.data.objects["LBA1_Character"]
+    armature = bpy.data.objects["LBA2_Character" if is_lba2 else "LBA1_Character"]
     assert armature.animation_data.action in idle_actions, "Idle is not the selected Blender action"
 
 curve_count = 0
@@ -45,4 +51,4 @@ if walk:
     sample = first + (last - first) * 0.27
     assert abs(curve.evaluate(sample) - curve.evaluate(sample + last - first)) < 1e-4
 
-print(f"PASS: reopened {path}, {len(bpy.data.actions)} cyclic actions, {curve_count} repeating channels, shared palette platform and packed images", flush=True)
+print(f"PASS: reopened {path}, {len(bpy.data.actions)} cyclic actions, {curve_count} repeating channels, warm platform and packed images", flush=True)
