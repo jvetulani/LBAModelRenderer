@@ -17,5 +17,16 @@ mono_crash.*.json
 .vscode/
 
 # other
-build/
-builds/
+build/*
+!build/.gdignore
+builds/*
+!builds/.gdignore
+!builds/web/
+!builds/linux-x86_64/
+!builds/windows-x86_64/
+builds/web/*
+builds/linux-x86_64/*
+builds/windows-x86_64/*
+!builds/web/.gitkeep
+!builds/linux-x86_64/.gitkeep
+!builds/windows-x86_64/.gitkeep

@@ -8,11 +8,14 @@ Choose your own LBA1, LBA2, or 1996 LBA2 demo installation folder in the app. Ga
 
 The builds use Godot 4.8.beta1 release templates. The Linux package was launched and checked in this build environment. The Windows executable was cross-exported from Linux; a native Windows run was not available here.
 
-To reproduce a build with matching Godot export templates installed:
+To make builds in the Godot editor, open **Project → Export**, select **Web**, **Linux**, or **Windows Desktop**, and click **Export Project**. The presets already have paths under `builds/`, and those directories are included in a fresh checkout. **Export All** exports all three. Install the matching Godot 4.8.beta1 export templates through **Editor → Manage Export Templates** if Godot asks for them. If an editor that was already open shows no presets after updating the project, close it and reopen this project's `project.godot`.
+
+To reproduce the same exports from a terminal with matching templates installed:
 
 ```bash
-godot --headless --path . --export-release Linux builds/linux-x86_64/LBAModelRenderer.x86_64
-godot --headless --path . --export-release "Windows Desktop" builds/windows-x86_64/LBAModelRenderer.exe
+godot --headless --path . --export-release Web
+godot --headless --path . --export-release Linux
+godot --headless --path . --export-release "Windows Desktop"
 ```
 
-Each executable must stay alongside the `.pck` from its own export.
+The Web preset writes `builds/web/index.html` and its companion files. The desktop presets write to `builds/linux-x86_64/` and `builds/windows-x86_64/`. Each executable must stay alongside the `.pck` from its own export. The downloadable desktop ZIPs at the root of `builds/` are packaged separately; Godot's **Export Project** does not create those ZIPs.
