@@ -230,13 +230,16 @@ def main():
     if helper_collection:
         for imported_helper in list(helper_collection.objects):
             bpy.data.objects.remove(imported_helper, do_unlink=True)
-    character = bpy.data.objects.get("CharacterMesh")
+    characters = sorted(
+        (obj for obj in bpy.data.objects if obj.type == "MESH" and obj.name.startswith("CharacterMesh")),
+        key=lambda obj: obj.name,
+    )
     shadow = bpy.data.objects.get("LBA1ActorShadow")
-    if character is None:
-        raise RuntimeError("GLB does not contain the expected character mesh")
+    if not characters:
+        raise RuntimeError("GLB does not contain character meshes")
     images = [image for image in bpy.data.images if image.size[:] == (256, 1)]
-    if len(images) != 1:
-        raise RuntimeError("GLB must contain one embedded 256-color palette")
+    if not images:
+        raise RuntimeError("GLB has no embedded 256-color palette")
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
     scene.render.resolution_x = 1920
@@ -244,15 +247,24 @@ def main():
     scene.render.resolution_percentage = 100
     scene.view_settings.view_transform = "Standard"
     scene.view_settings.look = "None"
-    reconstruct_palette_material(character, images[0])
-    for texture_material in character.data.materials[1:]:
-        if texture_material and texture_material.use_nodes:
-            for node in texture_material.node_tree.nodes:
-                if node.type == "TEX_IMAGE" and node.image:
-                    node.interpolation = "Closest"
-                    node.extension = "REPEAT"
-                    if not node.image.packed_file:
-                        node.image.pack()
+    for character in characters:
+        palette_image = next(
+            (
+                node.image
+                for node in character.data.materials[0].node_tree.nodes
+                if node.type == "TEX_IMAGE" and node.image and node.image.size[:] == (256, 1)
+            ),
+            images[0],
+        )
+        reconstruct_palette_material(character, palette_image)
+        for texture_material in character.data.materials[1:]:
+            if texture_material and texture_material.use_nodes:
+                for node in texture_material.node_tree.nodes:
+                    if node.type == "TEX_IMAGE" and node.image:
+                        node.interpolation = "Closest"
+                        node.extension = "REPEAT"
+                        if not node.image.packed_file:
+                            node.image.pack()
 
     bpy.ops.object.select_all(action="DESELECT")
     bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=0.75, depth=0.10, location=(0, 0, -0.055))
@@ -289,7 +301,8 @@ def main():
     scene.render.film_transparent = False
     bpy.ops.file.pack_all()
     bpy.ops.wm.save_as_mainfile(filepath=blend_path)
-    print(f"SAVED {blend_path}: {len(bpy.data.actions)} cyclic clips, {cyclic_curves} cyclic channels, {len(armatures[0].data.bones)} bones, palette, {len(character.data.materials) - 1} texture materials, shadow={shadow is not None}", flush=True)
+    texture_materials = sum(max(0, len(character.data.materials) - 1) for character in characters)
+    print(f"SAVED {blend_path}: {len(bpy.data.actions)} cyclic clips, {cyclic_curves} cyclic channels, {len(armatures[0].data.bones)} bones, {len(characters)} body variants, palette, {texture_materials} texture materials, shadow={shadow is not None}", flush=True)
 
 
 if __name__ == "__main__":

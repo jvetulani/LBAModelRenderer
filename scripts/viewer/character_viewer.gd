@@ -27,6 +27,7 @@ var _palette := PackedByteArray()
 var _lba2_palette_index := 42
 var game := ""
 var _body_index := 0
+var _display_body_index := 0
 var _motion_grid: MeshInstance3D
 var _motion_grid_enabled := true
 var _root_motion_accumulated := Vector3.ZERO
@@ -133,6 +134,7 @@ func _load_body(body_index: int) -> Dictionary:
 	_palette = palette_data["palette"]
 	game = "LBA2" if is_lba2 else ("LBA2-96" if is_demo else "LBA1")
 	_body_index = body_index
+	_display_body_index = body_index
 	_shadow_sprite = {}
 	body = decoded
 	_animated_atlas = LBA2_ANIMATED_ATLAS.new(body["texture_atlas"]) if is_lba2 else null
@@ -280,18 +282,41 @@ func _find_animations(body_index: int) -> Array:
 		if not matches["ok"]:
 			return []
 		var found: Array = matches["animations"]
-		# Several shark BODY variants share one FILE3D stream, but their actions
-		# target different skeletons. Keep the authored variant-specific actions.
-		if body.get("appearance", {}).get("matching_animation_groups", false):
-			var matching: Array = []
+		# A FILE3D stream can switch BODY variants between actions. Keep every
+		# authored action and pair it with the variant matching its skeleton.
+		if body.get("appearance", {}).get("switch_body_by_animation_groups", false):
+			var matched: Array = []
+			var group_counts := {body_index: body["groups"].size()}
 			for entry in found:
 				var resource := _read_entry("ANIM.HQR", entry["archive_index"])
 				if not resource["ok"]:
 					continue
 				var decoded := LBA1AnimationDecoder.decode(resource["data"])
-				if decoded["ok"] and decoded["group_count"] == body["groups"].size():
-					matching.append(entry)
-			return matching
+				if not decoded["ok"]:
+					continue
+				var target_body := -1
+				if decoded["group_count"] == body["groups"].size():
+					target_body = body_index
+				else:
+					for variant in entry["body_variants"]:
+						var variant_index: int = variant["archive_index"]
+						if not group_counts.has(variant_index):
+							var variant_resource := _read_entry("BODY.HQR", variant_index)
+							if not variant_resource["ok"]:
+								continue
+							var variant_data := LBA2_BODY.decode(variant_resource["data"])
+							if not variant_data["ok"]:
+								continue
+							group_counts[variant_index] = variant_data["groups"].size()
+						if group_counts.get(variant_index, -1) == decoded["group_count"]:
+							target_body = variant_index
+							break
+				if target_body < 0:
+					continue
+				var matched_entry: Dictionary = entry.duplicate()
+				matched_entry["body_index"] = target_body
+				matched.append(matched_entry)
+			return matched
 		return found
 	if game == "LBA2-96":
 		var demo_found := []
@@ -377,12 +402,24 @@ func _find_animations(body_index: int) -> Array:
 func select_animation(archive_index: int) -> Dictionary:
 	if body.is_empty():
 		return {"ok": false, "error": "Load a character first"}
+	var target_body := _body_index
+	if game == "LBA2":
+		for entry in animation_entries:
+			if entry["archive_index"] == archive_index:
+				target_body = entry.get("body_index", _body_index)
+				break
 	var resource := _read_entry("ANIM.HQR", archive_index)
 	if not resource["ok"]:
 		return resource
 	var decoded := _decode_animation(archive_index, resource["data"])
 	if not decoded["ok"]:
 		return decoded
+	if target_body != _display_body_index:
+		var switched := _switch_lba2_body(target_body)
+		if not switched["ok"]:
+			return switched
+	if decoded["group_count"] != body["groups"].size() and body.get("appearance", {}).get("switch_body_by_animation_groups", false):
+		return {"ok": false, "error": "Animation and body skeletons do not match"}
 	animation = decoded
 	_current_frame = 0
 	_phase_ticks = 0.0
@@ -392,13 +429,55 @@ func select_animation(archive_index: int) -> Dictionary:
 	playing = true
 	_apply_pose(0, 0, 1.0)
 	_emit_frame()
-	return {"ok": true, "frame_count": animation["frame_count"], "group_count": animation["group_count"]}
+	var body_groups: int = body["groups"].size()
+	var review_limit := maxi(4, ceili(float(body_groups) * 0.25))
+	return {"ok": true, "frame_count": animation["frame_count"], "group_count": animation["group_count"], "body_group_count": body_groups, "skeleton_review": absi(animation["group_count"] - body_groups) > review_limit, "display_body_index": _display_body_index}
+
+
+func _switch_lba2_body(body_index: int) -> Dictionary:
+	var decoded := _decode_lba2_variant(body_index)
+	if not decoded["ok"]:
+		return decoded
+	var old_material: ShaderMaterial = character.get_node("Polygons").material_override
+	var current_dither: Variant = old_material.get_shader_parameter("dither_mode")
+	var dither_mode: int = int(current_dither) if current_dither != null else 1
+	remove_child(character)
+	character.queue_free()
+	body = decoded
+	_display_body_index = body_index
+	character = CharacterMeshBuilder.build_static_pose(body, _palette, _animated_atlas.texture)
+	character.get_node("Wireframe").visible = _wireframe_enabled
+	var points: PackedVector3Array = body["pose_points"]
+	var min_y := points[0].y
+	for point in points:
+		min_y = minf(min_y, point.y)
+	character.position = stand_position - Vector3.UP * min_y * CharacterMeshBuilder.UNIT_SCALE
+	add_child(character)
+	set_dither_mode(dither_mode)
+	var polygon_material: ShaderMaterial = character.get_node("Polygons").material_override
+	palette_texture_ready.emit(polygon_material.get_shader_parameter("palette_texture"))
+	return {"ok": true}
+
+
+func _decode_lba2_variant(body_index: int) -> Dictionary:
+	var resource := _read_entry("BODY.HQR", body_index)
+	if not resource["ok"]:
+		return resource
+	var decoded := LBA2_BODY.decode(resource["data"])
+	if not decoded["ok"]:
+		return decoded
+	decoded["appearance"] = LBA2_OVERRIDES.for_retail_body(body_index)
+	LBA2_OVERRIDES.apply_geometry(decoded)
+	for key in ["shade_table", "normal_light_level", "texture_atlas"]:
+		decoded[key] = body[key]
+	return decoded
 
 
 func export_input() -> Dictionary:
 	if body.is_empty():
 		return {"ok": false, "error": "Load a character first"}
 	var clips := []
+	var clips_by_body := {}
 	for entry in animation_entries:
 		var resource := _read_entry("ANIM.HQR", entry["archive_index"])
 		if not resource["ok"]:
@@ -406,11 +485,30 @@ func export_input() -> Dictionary:
 		var decoded := _decode_animation(entry["archive_index"], resource["data"])
 		if not decoded["ok"]:
 			return {"ok": false, "error": "ANIM #%d: %s" % [entry["archive_index"], decoded["error"]]}
-		clips.append({"archive_index": entry["archive_index"], "name": entry["name"], "animation": decoded})
+		var clip := {"archive_index": entry["archive_index"], "name": entry["name"], "animation": decoded}
+		clips.append(clip)
+		var target_body: int = entry.get("body_index", _display_body_index)
+		if not clips_by_body.has(target_body):
+			clips_by_body[target_body] = []
+		clips_by_body[target_body].append(clip)
 	var export_body := body.duplicate()
 	if _animated_atlas != null:
 		export_body["texture_atlas"] = _animated_atlas.pixels()
-	return {"ok": true, "body": export_body, "palette": _palette, "shadow": _shadow_sprite if _shadow_enabled else {}, "clips": clips, "game": game}
+	var result := {"ok": true, "body": export_body, "palette": _palette, "shadow": _shadow_sprite if _shadow_enabled else {}, "clips": clips, "game": game}
+	if game == "LBA2" and clips_by_body.size() > 1:
+		var variants := []
+		var body_indices: Array = clips_by_body.keys()
+		body_indices.sort()
+		for variant_index in body_indices:
+			var variant_body: Dictionary = export_body if variant_index == _display_body_index else _decode_lba2_variant(variant_index)
+			if not variant_body.get("ok", true):
+				return variant_body
+			variant_body = variant_body.duplicate()
+			variant_body["texture_atlas"] = export_body["texture_atlas"]
+			variants.append({"body_index": variant_index, "body": variant_body, "clips": clips_by_body[variant_index]})
+		result["variants"] = variants
+		result["selected_variant"] = _display_body_index
+	return result
 
 
 func _decode_animation(archive_index: int, bytes: PackedByteArray) -> Dictionary:

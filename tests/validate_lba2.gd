@@ -156,19 +156,50 @@ func _init() -> void:
 		assert(monkey["polygons"][unchanged_face]["texture_uvs"] == original_face_uvs, "Monkey face texture must stay unchanged")
 		assert(viewer.load_body(path, monkey_index)["ok"])
 		assert(LBA1GLBExporter.build(viewer.export_input())["ok"], "Monkey BODY #%d GLB export failed" % monkey_index)
-	for shark_index in [320, 321, 322]:
-		var shark_loaded := viewer.load_body(path, shark_index)
-		assert(shark_loaded["ok"])
-		var expected_groups: int = viewer.body["groups"].size()
-		assert(not viewer.animation_entries.is_empty(), "Shark BODY #%d needs matching actions" % shark_index)
-		for action in viewer.animation_entries:
+	var skirt_source := BODY_DECODER.decode(HQRReader.read_entry(path.path_join("BODY.HQR"), 381)["data"])
+	var skirt_repaired: Dictionary = skirt_source.duplicate(true)
+	skirt_repaired["appearance"] = LBA2_OVERRIDES.for_retail_body(381)
+	LBA2_OVERRIDES.apply_geometry(skirt_repaired)
+	var thin_uvs: PackedVector2Array = skirt_source["polygons"][294]["texture_uvs"]
+	var full_uvs: PackedVector2Array = skirt_repaired["polygons"][294]["texture_uvs"]
+	var thin_area := absf((thin_uvs[1] - thin_uvs[0]).cross(thin_uvs[2] - thin_uvs[0]))
+	var full_area := absf((full_uvs[1] - full_uvs[0]).cross(full_uvs[2] - full_uvs[0]))
+	assert(full_area > thin_area * 5.0, "BODY #381 skirt UV strip remains collapsed")
+	assert(skirt_repaired["polygons"][306]["texture_uvs"] == skirt_source["polygons"][306]["texture_uvs"], "BODY #381 non-stretched texture face changed")
+	for undergass_index in [320, 321, 322, 376, 426, 427]:
+		var undergass_loaded := viewer.load_body(path, undergass_index)
+		assert(undergass_loaded["ok"])
+		assert(not viewer.animation_entries.is_empty(), "Undergass BODY #%d needs its authored actions" % undergass_index)
+		var actions: Array = viewer.animation_entries.duplicate(true)
+		for action in actions:
 			var action_data: Dictionary = LBA1AnimationDecoder.decode(HQRReader.read_entry(path.path_join("ANIM.HQR"), action["archive_index"])["data"])
-			assert(action_data["ok"] and action_data["group_count"] == expected_groups, "Shark BODY #%d has an action for the wrong skeleton" % shark_index)
-		assert(viewer.export_input()["clips"].size() == viewer.animation_entries.size())
+			assert(action_data["ok"])
+			assert(viewer.select_animation(action["archive_index"])["ok"], "Undergass BODY #%d action %d did not select" % [undergass_index, action["archive_index"]])
+			assert(action_data["group_count"] == viewer.body["groups"].size(), "Undergass BODY #%d action %d uses the wrong skeleton" % [undergass_index, action["archive_index"]])
+		assert(viewer.export_input()["clips"].size() == actions.size())
 	assert(viewer.load_body(path, 320)["ok"])
-	assert(viewer.animation_entries.map(func(action: Dictionary) -> int: return action["archive_index"]) == [1480, 1487])
+	assert(viewer.animation_entries.any(func(action: Dictionary) -> bool: return action["archive_index"] == 1480))
 	assert(viewer.load_body(path, 322)["ok"])
 	assert(viewer.animation_entries.any(func(action: Dictionary) -> bool: return action["archive_index"] == 1481))
+	assert(viewer.load_body(path, 426)["ok"])
+	assert(viewer.animation_entries.any(func(action: Dictionary) -> bool: return action["archive_index"] == 1889))
+	assert(viewer.load_body(path, 427)["ok"])
+	assert(viewer.animation_entries.any(func(action: Dictionary) -> bool: return action["archive_index"] == 1892))
+	assert(viewer.select_animation(1892)["ok"] and viewer.body["groups"].size() == 30)
+	var undergass_export := LBA1GLBExporter.build(viewer.export_input())
+	assert(undergass_export["ok"] and undergass_export["variants"] == 3 and undergass_export["source_actions"] >= 10, "Undergass BODY #427 GLB must include all three forms")
+	var undergass_state := GLTFState.new()
+	assert(GLTFDocument.new().append_from_buffer(undergass_export["bytes"], "", undergass_state) == OK)
+	assert(undergass_state.get_skins().size() == 3, "Undergass GLB must have three separate skins")
+	assert(undergass_state.get_animations().size() >= undergass_export["source_actions"], "Undergass GLB is missing actions")
+	var glb_bytes: PackedByteArray = undergass_export["bytes"]
+	var gltf_json: Dictionary = JSON.parse_string(glb_bytes.slice(20, 20 + int(glb_bytes.decode_u32(12))).get_string_from_utf8())
+	for clip_json in gltf_json["animations"]:
+		var scale_targets := 0
+		for channel in clip_json["channels"]:
+			if channel["target"]["path"] == "scale":
+				scale_targets += 1
+		assert(scale_targets == 3, "Every undergass action must select exactly one of its three forms")
 	assert(viewer.load_body(path, 399)["ok"])
 	var fire_export := viewer.export_input()
 	var exported_fire_atlas: PackedByteArray = fire_export["body"]["texture_atlas"]

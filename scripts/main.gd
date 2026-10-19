@@ -171,4 +171,8 @@ func _select_animation(archive_index: int) -> void:
 		ui.set_status("ANIM.HQR #%d: %s" % [archive_index, result["error"]])
 		ui.set_play_state(false)
 		return
+	if result.get("display_body_index", ui.body_index()) != ui.body_index():
+		ui.set_status("ANIM.HQR #%d uses BODY.HQR #%d from this character's alternate form." % [archive_index, result["display_body_index"]])
+	elif result.get("skeleton_review", false):
+		ui.set_status("ANIM.HQR #%d has %d groups; BODY.HQR #%d has %d. This shared action may need another form." % [archive_index, result["group_count"], ui.body_index(), result["body_group_count"]])
 	ui.set_play_state(true)

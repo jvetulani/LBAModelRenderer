@@ -46,6 +46,7 @@ static func apply_geometry(body: Dictionary) -> void:
 		polygon["texture_uvs"] = uvs
 		polygons[polygon_index] = polygon
 	var arm_uv_min_density := float(appearance.get("arm_uv_min_density", 0.0))
+	var uv_min_density := float(appearance.get("uv_min_density", 0.0))
 	if arm_uv_min_density > 0.0:
 		# All four monkey limb chains have faces with a collapsed texture axis.
 		# Restore that axis to a consistent texel density in the face plane.
@@ -66,6 +67,19 @@ static func apply_geometry(body: Dictionary) -> void:
 				continue
 			var uvs: PackedVector2Array = polygon["texture_uvs"]
 			var repaired := _restore_uv_density(points, pose_points, uvs, arm_uv_min_density)
+			if repaired != uvs:
+				polygon["texture_uvs"] = repaired
+				polygons[polygon_index] = polygon
+	if uv_min_density > 0.0:
+		# Rebuild only polygons whose source UVs collapse along one surface axis.
+		# The repair is stored per BODY so unrelated models keep their authored UVs.
+		var pose_points: PackedVector3Array = body["pose_points"]
+		for polygon_index in range(polygons.size()):
+			var polygon: Dictionary = polygons[polygon_index]
+			if int(polygon.get("texture_handle", -1)) < 0:
+				continue
+			var uvs: PackedVector2Array = polygon["texture_uvs"]
+			var repaired := _restore_uv_density(polygon["points"], pose_points, uvs, uv_min_density)
 			if repaired != uvs:
 				polygon["texture_uvs"] = repaired
 				polygons[polygon_index] = polygon

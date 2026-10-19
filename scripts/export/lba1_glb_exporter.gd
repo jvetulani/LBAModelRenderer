@@ -43,6 +43,81 @@ class MeshCollector:
 static func build(input: Dictionary) -> Dictionary:
 	if not input.get("ok", false):
 		return {"ok": false, "error": "Export input is invalid"}
+	var variants: Array = input.get("variants", [])
+	if variants.is_empty():
+		var single := _build_single_scene(input)
+		if not single["ok"]:
+			return single
+		return _serialize_scene(single["scene"], single["animations"], single["source_actions"], single["vertices"], 1)
+	var combined := Node3D.new()
+	combined.name = "%s_Character" % input["game"]
+	var parts := []
+	var total_clips := 0
+	var total_actions := 0
+	var total_vertices := 0
+	for variant in variants:
+		var part_input := input.duplicate()
+		part_input["body"] = variant["body"]
+		part_input["clips"] = variant["clips"]
+		part_input["shadow"] = {}
+		var part := _build_single_scene(part_input, variant["body_index"])
+		if not part["ok"]:
+			combined.free()
+			return part
+		var partial_scene: Node3D = part["scene"]
+		var children := partial_scene.get_children().duplicate()
+		for child in children:
+			child.owner = null
+			partial_scene.remove_child(child)
+			combined.add_child(child)
+			_set_owner_recursive(child, combined)
+		partial_scene.free()
+		parts.append(part)
+		total_clips += part["animations"]
+		total_actions += part["source_actions"]
+		total_vertices += part["vertices"]
+	var selected: int = input.get("selected_variant", variants[0]["body_index"])
+	for part in parts:
+		var skeleton: Skeleton3D = part["skeleton"]
+		skeleton.scale = Vector3.ONE if part["body_index"] == selected else Vector3.ZERO
+		var player: AnimationPlayer = part["player"]
+		var library: AnimationLibrary = player.get_animation_library("")
+		for animation_name in library.get_animation_list():
+			var clip: Animation = library.get_animation(animation_name)
+			for candidate in parts:
+				var variant_skeleton: Skeleton3D = candidate["skeleton"]
+				var track := clip.add_track(Animation.TYPE_SCALE_3D)
+				clip.track_set_path(track, NodePath(variant_skeleton.name))
+				var scale := Vector3.ONE if candidate["body_index"] == part["body_index"] else Vector3.ZERO
+				clip.scale_track_insert_key(track, 0.0, scale)
+				clip.scale_track_insert_key(track, clip.length, scale)
+	return _serialize_scene(combined, total_clips, total_actions, total_vertices, parts.size())
+
+
+static func _set_owner_recursive(node: Node, owner: Node) -> void:
+	node.owner = owner
+	for child in node.get_children():
+		_set_owner_recursive(child, owner)
+
+
+static func _serialize_scene(scene: Node3D, clip_count: int, action_count: int, vertex_count: int, variant_count: int) -> Dictionary:
+	var document := GLTFDocument.new()
+	document.image_format = "PNG"
+	var state := GLTFState.new()
+	var result := document.append_from_scene(scene, state)
+	if result != OK:
+		scene.free()
+		return {"ok": false, "error": "GLB scene conversion failed: %s" % error_string(result)}
+	var buffer := document.generate_buffer(state)
+	scene.free()
+	if buffer.size() < 20 or buffer.slice(0, 4).get_string_from_ascii() != "glTF":
+		return {"ok": false, "error": "Godot did not generate a valid GLB buffer"}
+	return {"ok": true, "bytes": buffer, "animations": clip_count, "source_actions": action_count, "vertices": vertex_count, "variants": variant_count}
+
+
+static func _build_single_scene(input: Dictionary, body_index: int = -1) -> Dictionary:
+	if not input.get("ok", false):
+		return {"ok": false, "error": "Export input is invalid"}
 	var body: Dictionary = input["body"]
 	var palette: PackedByteArray = input["palette"]
 	var clips: Array = input["clips"]
@@ -56,7 +131,7 @@ static func build(input: Dictionary) -> Dictionary:
 	var scene := Node3D.new()
 	scene.name = "%s_Character" % body.get("game", "LBA1")
 	var skeleton := Skeleton3D.new()
-	skeleton.name = "Skeleton3D"
+	skeleton.name = "Skeleton3D" if body_index < 0 else "Skeleton3D_%d" % body_index
 	scene.add_child(skeleton)
 	skeleton.owner = scene
 	var rest_origins: Array[Vector3] = []
@@ -151,7 +226,7 @@ static func build(input: Dictionary) -> Dictionary:
 	if not shadow.is_empty():
 		_add_shadow(scene, shadow, palette)
 	var player := AnimationPlayer.new()
-	player.name = "AnimationPlayer"
+	player.name = "AnimationPlayer" if body_index < 0 else "AnimationPlayer_%d" % body_index
 	player.root_node = NodePath("..")
 	scene.add_child(player)
 	player.owner = scene
@@ -175,18 +250,7 @@ static func build(input: Dictionary) -> Dictionary:
 			library.add_animation(name + "_loop", _make_animation(skeleton, decoded, loop_frames, angle_scale, tick_rate))
 			exported_clips += 1
 	player.add_animation_library("", library)
-	var document := GLTFDocument.new()
-	document.image_format = "PNG"
-	var state := GLTFState.new()
-	var result := document.append_from_scene(scene, state)
-	if result != OK:
-		scene.free()
-		return {"ok": false, "error": "GLB scene conversion failed: %s" % error_string(result)}
-	var buffer := document.generate_buffer(state)
-	scene.free()
-	if buffer.size() < 20 or buffer.slice(0, 4).get_string_from_ascii() != "glTF":
-		return {"ok": false, "error": "Godot did not generate a valid GLB buffer"}
-	return {"ok": true, "bytes": buffer, "animations": exported_clips, "source_actions": clips.size(), "vertices": collector.vertices.size() + texture_vertex_count}
+	return {"ok": true, "scene": scene, "skeleton": skeleton, "player": player, "body_index": body_index, "animations": exported_clips, "source_actions": clips.size(), "vertices": collector.vertices.size() + texture_vertex_count}
 
 
 static func _palette_image(bytes: PackedByteArray, eight_bit: bool = false) -> Image:
@@ -363,7 +427,7 @@ static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_ind
 		times.append(time)
 	animation.length = maxf(time, 0.001)
 	for group_index in range(skeleton.get_bone_count()):
-		var bone_path := NodePath("Skeleton3D:Group_%02d" % group_index)
+		var bone_path := NodePath("%s:Group_%02d" % [skeleton.name, group_index])
 		var rotation_track := animation.add_track(Animation.TYPE_ROTATION_3D)
 		animation.track_set_path(rotation_track, bone_path)
 		var position_track := animation.add_track(Animation.TYPE_POSITION_3D)

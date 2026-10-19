@@ -37,7 +37,7 @@ static func animations_for_body(bytes: PackedByteArray, body_index: int) -> Dict
 			if seen.has(archive_index):
 				continue
 			seen[archive_index] = true
-			found.append({"archive_index": archive_index, "generic_id": animation["generic_id"], "file3d_index": file_index, "name": LBA1File3DDecoder.animation_name(animation["generic_id"])})
+			found.append({"archive_index": archive_index, "generic_id": animation["generic_id"], "file3d_index": file_index, "name": LBA1File3DDecoder.animation_name(animation["generic_id"]), "body_variants": decoded["bodies"]})
 	return {"ok": true, "animations": found, "file_count": file_count}
 
 
