@@ -8,6 +8,11 @@ func _initialize() -> void:
 func _validate() -> void:
 	assert(BODY_NAMES.LBA2_RETAIL.size() == 469)
 	assert(BODY_NAMES.LBA1_RETAIL.size() == 132)
+	assert(BODY_NAMES.name_for("LBA1", 28) == "Surveillance device")
+	assert(not BODY_NAMES.search_text("LBA1", 28).contains("tank"))
+	assert(BODY_NAMES.name_for("LBA1", 29) == "Hairdryer Salesman")
+	assert(BODY_NAMES.search_text("LBA1", 29).contains("hairdryer"))
+	assert(not BODY_NAMES.search_text("LBA1", 29).contains("surveillance"))
 	assert(BODY_NAMES.name_for("LBA1", 51) == "Ferryboat")
 	assert(BODY_NAMES.name_for("LBA2", 203) == "Zoé + pram (1)")
 	assert(BODY_NAMES.name_for("LBA2-96", 4).contains("Zoé"))
@@ -29,6 +34,12 @@ func _validate() -> void:
 	assert(ui.get("_find_dialog") is Control, "Model picker should be themed in the viewer scene")
 	ui.set_body_entry_count(132)
 	ui.set_game("LBA1")
+	query.text = "surveillance"
+	ui.call("_refresh_body_search")
+	assert(results.item_count == 1 and results.get_item_metadata(0) == 28, "Surveillance device must be BODY #28")
+	query.text = "hairdryer"
+	ui.call("_refresh_body_search")
+	assert(results.item_count == 1 and results.get_item_metadata(0) == 29, "Hairdryer Salesman must be BODY #29")
 	query.text = "ferry"
 	ui.call("_refresh_body_search")
 	assert(results.item_count == 1 and results.get_item_metadata(0) == 51, "LBA1 ferry should be searchable")

@@ -35,8 +35,8 @@ const LBA1_RETAIL: Array[String] = [
 	"Rabbibunny: Light brown male, yellow shirt and blue shorts in tatters model", # 25
 	"Rabbibunny: Orange male, white clothes (the painter) model", # 26
 	"Rabbibunny: Orange male, white clothes with brush (the painter) model", # 27
-	"Weird motion-seeking tank (green & yellow) model", # 28
-	"Surveillance device model", # 29
+	"Surveillance device", # 28 — corrected from the community catalog
+	"Hairdryer Salesman", # 29 — corrected from the community catalog
 	"Quetch: Salesman model", # 30
 	"Groboclone: Yellow model", # 31
 	"Groboclone: Green model", # 32
@@ -154,7 +154,6 @@ const LBA1_SHORT_NAMES := {
 	25: "Rabbibunny (tattered yellow shirt)",
 	26: "Rabbibunny painter",
 	27: "Rabbibunny painter (brush)",
-	28: "Motion-seeking tank",
 	35: "Grobo bulldozer operator",
 	44: "Rabbibunny (orange dress)",
 	45: "Rabbibunny (green dress)",
