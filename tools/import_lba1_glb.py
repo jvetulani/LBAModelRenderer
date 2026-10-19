@@ -224,7 +224,7 @@ def main():
     source_path, blend_path = input_paths()
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
-    bpy.ops.import_scene.gltf(filepath=source_path)
+    bpy.ops.import_scene.gltf(filepath=source_path,bone_heuristic='FORTUNE')
     repair_embedded_glb_images(source_path)
     helper_collection = bpy.data.collections.get("glTF_not_exported")
     if helper_collection:
