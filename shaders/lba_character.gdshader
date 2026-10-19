@@ -6,7 +6,7 @@ uniform sampler2D texture_atlas : filter_nearest, repeat_disable;
 uniform sampler2D shade_table : filter_nearest, repeat_disable;
 uniform bool has_texture_atlas = false;
 uniform bool has_shade_table = false;
-uniform bool lba1_copper_faces = false;
+uniform bool lba1_palette_effects = false;
 // Preview shading stays inside the source palette's 16-colour ramps.
 uniform float palette_ramp_size = 0.0;
 uniform float normal_light_level = 12.0;
@@ -156,11 +156,24 @@ void fragment() {
 		}
 		ALBEDO = has_shade_table && (dither_mode == 3 || dither_mode == 4) ? shaded_color : texture(palette_texture, vec2((texel + 0.5) / 256.0, 0.5)).rgb;
 		ROUGHNESS = 1.0;
-	} else if (lba1_copper_faces && source_render_type == 2.0) {
-		// SVGAPolyCopper walks up and down the source 16-colour ramp, one
-		// step per VGA scanline. Preserve that band scale at large viewports.
+	} else if (lba1_palette_effects && source_render_type == 1.0) {
+		// SVGAPolyTele varies the four palette entries starting at its base.
+		float shade = floor(dither_hash(floor(FRAGCOORD.xy)) * 4.0);
+		float index = mod(source_base_index + shade, 256.0);
+		ALBEDO = texture(palette_texture, vec2((index + 0.5) / 256.0, 0.5)).rgb;
+		ROUGHNESS = 1.0;
+	} else if (lba1_palette_effects && source_render_type == 4.0) {
+		// SVGAPolyMarbre interpolates palette indices across each screen row.
+		float delta = mod(texture_region.x - source_base_index + 128.0, 256.0) - 128.0;
+		float index = mod(floor(source_base_index + delta * clamp(UV.x, 0.0, 1.0) + 0.5), 256.0);
+		ALBEDO = texture(palette_texture, vec2((index + 0.5) / 256.0, 0.5)).rgb;
+		ROUGHNESS = 1.0;
+	} else if (lba1_palette_effects && (source_render_type == 2.0 || source_render_type == 3.0)) {
+		// Copper advances each source scanline; Bopper holds each palette
+		// colour for two lines. Both reverse at the 16-colour ramp edges.
 		float source_line = floor(FRAGCOORD.y / max(VIEWPORT_SIZE.y / 480.0, 1.0));
-		float ramp_step = 15.0 - abs(mod(source_line, 30.0) - 15.0);
+		float line_step = source_render_type == 3.0 ? floor(source_line * 0.5) : source_line;
+		float ramp_step = 15.0 - abs(mod(line_step + mod(source_base_index, 16.0), 30.0) - 15.0);
 		float index = floor(source_base_index / 16.0) * 16.0 + ramp_step;
 		ALBEDO = texture(palette_texture, vec2((index + 0.5) / 256.0, 0.5)).rgb;
 		ROUGHNESS = 1.0;

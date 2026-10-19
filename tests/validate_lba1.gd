@@ -43,7 +43,7 @@ func _init() -> void:
 		_fail("LBA1 BODY.HQR #0 dither material count differs from the source fixture")
 		return
 	var transparent_bodies := {}
-	var mode_counts := {2: 0, 5: 0, 6: 0}
+	var mode_counts := {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
 	for body_index in range(132):
 		var candidate_entry := HQRReader.read_entry(lba1_dir.path_join("BODY.HQR"), body_index)
 		if not candidate_entry["ok"]:
@@ -54,8 +54,8 @@ func _init() -> void:
 			return
 		for polygon in candidate["polygons"]:
 			var kind: int = polygon["render_type"]
-			if kind == 2:
-				mode_counts[2] += 1
+			if kind in [1, 2, 3, 4]:
+				mode_counts[kind] += 1
 			if kind in [5, 6]:
 				mode_counts[kind] += 1
 				transparent_bodies[body_index] = true
@@ -78,6 +78,15 @@ func _init() -> void:
 	var boat_copper_faces: int = boat["polygons"].filter(func(polygon: Dictionary) -> bool: return int(polygon["render_type"]) == 2).size()
 	if boat_copper_faces != 3 or mode_counts[2] != 43:
 		_fail("LBA1 copper window face audit differs from the archive")
+		return
+	var ferry_entry := HQRReader.read_entry(lba1_dir.path_join("BODY.HQR"), 51)
+	var ferry: Dictionary = LBA1BodyDecoder.decode(ferry_entry["data"])
+	var ferry_bopper_faces: int = ferry["polygons"].filter(func(polygon: Dictionary) -> bool: return int(polygon["render_type"]) == 3).size()
+	if ferry_bopper_faces != 5 or mode_counts[3] != 5:
+		_fail("LBA1 ferry Bopper face audit differs from the archive")
+		return
+	if mode_counts[1] != 6 or mode_counts[4] != 8:
+		_fail("LBA1 Tele or Marble face audit differs from the archive")
 		return
 
 	var palette_entry := HQRReader.read_entry(lba1_dir.path_join("RESS.HQR"), 0)

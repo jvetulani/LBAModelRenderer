@@ -48,7 +48,7 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray, 
 	else:
 		polygons_node.material_override = _make_material(palette_texture, -1, is_lba2, atlas_texture, shade_texture, body.get("normal_light_level", 12))
 		if body.get("game", "LBA1") == "LBA1":
-			polygons_node.material_override.set_shader_parameter("lba1_copper_faces", true)
+			polygons_node.material_override.set_shader_parameter("lba1_palette_effects", true)
 		if is_lba2:
 			polygons_node.material_override.set_shader_parameter("reverse_shade_strength", float(body.get("appearance", {}).get("reverse_shade_strength", 0.0)))
 	if is_lba2 and atlas_texture != null and LBA2_APPEARANCE.uses_spectral_preview(body):
@@ -196,6 +196,21 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 		if (LBA2_APPEARANCE.is_translucent_face(body, polygon) or LBA1_FACE_MODES.is_transparent(body, polygon)) != glass_only:
 			continue
 		var point_indices: PackedInt32Array = polygon["points"]
+		var marble_face: bool = body.get("game", "LBA1") == "LBA1" and int(polygon["render_type"]) == 4
+		var marble_axis := 0
+		var marble_min := INF
+		var marble_max := -INF
+		if marble_face:
+			for point_index in point_indices:
+				marble_min = minf(marble_min, points[point_index].x)
+				marble_max = maxf(marble_max, points[point_index].x)
+			if marble_max - marble_min < 0.001:
+				marble_axis = 2
+				marble_min = INF
+				marble_max = -INF
+				for point_index in point_indices:
+					marble_min = minf(marble_min, points[point_index].z)
+					marble_max = maxf(marble_max, points[point_index].z)
 		var normal_indices: PackedInt32Array = polygon["normals"]
 		var first := points[point_indices[0]]
 		var second := points[point_indices[1]]
@@ -229,6 +244,9 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 				source_normals.append_array(PackedFloat32Array([source_normal.x, source_normal.y, source_normal.z, divisor]))
 				var texture_uv := Vector2.ZERO
 				var texture_region := PackedFloat32Array([0.0, 0.0, 255.0, 255.0])
+				if marble_face:
+					texture_uv.x = clampf((points[point_indices[corner]][marble_axis] - marble_min) / maxf(marble_max - marble_min, 1.0), 0.0, 1.0)
+					texture_region[0] = float(int(polygon["color_word"]) >> 8)
 				if polygon.get("texture_handle", -1) >= 0:
 					texture_uv = polygon["texture_uvs"][corner]
 					var origin: Vector2 = polygon["texture_origin"]

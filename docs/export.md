@@ -8,7 +8,7 @@ On desktop, choose **Export GLB** or **Export Blender** after loading a characte
 
 The LBA2 fire and plasma textures animate in the preview. GLB and Blender exports currently contain the visible texture frame at export time; the texture does not animate after export.
 
-LBA1 copper faces, including the small boat's blue cabin windows, are exported with an embedded palette-ramp texture. LBA1 type-5 glass and type-6 screen-door faces are exported as separate half-alpha surfaces. These are portable approximations: glTF and Blender do not reproduce the original framebuffer palette-nibble blend or exact checkerboard pixel phase.
+LBA1 Copper and Bopper faces, including the small boat's and ferry's blue windows, are exported with embedded palette-ramp textures. Tele and Marble faces use model-attached noise and palette-gradient textures. LBA1 type-5 glass and type-6 screen-door faces are exported as separate half-alpha surfaces. These are portable approximations: glTF and Blender do not reproduce the original screen-space sweep timing, Tele seed, framebuffer palette-nibble blend, or exact checkerboard pixel phase.
 
 Portable Windows and Linux builds, with setup instructions, are described in [desktop_builds.md](desktop_builds.md).
 
