@@ -25,6 +25,18 @@ func _init() -> void:
 	assert(shirt_faces[233]["texture_uvs"][1].is_equal_approx(shirt_faces[232]["texture_uvs"][2]))
 	assert(shirt_faces[237]["texture_uvs"][1].is_equal_approx(shirt_faces[233]["texture_uvs"][2]))
 	assert(shirt_faces[279]["texture_uvs"][3].is_equal_approx(shirt_faces[232]["texture_uvs"][1]))
+	# BODY #48's sleeve button is four small faces behind the coat surface.
+	# Keep all four at the same depth so animation never splits the detail.
+	var button_body: Dictionary = BODY_DECODER.decode(HQRReader.read_entry(path.path_join("BODY.HQR"), 48)["data"])
+	assert(button_body["ok"])
+	button_body["appearance"] = LBA2_OVERRIDES.for_retail_body(48)
+	LBA2_OVERRIDES.apply_geometry(button_body)
+	var button_faces: Array = button_body["polygons"]
+	var button_offset: float = button_faces[12].get("auto_surface_offset", 0.0)
+	assert(button_offset >= 9.0 / 512.0)
+	for button_face in [13, 24, 25]:
+		assert(is_equal_approx(button_faces[button_face].get("auto_surface_offset", 0.0), button_offset))
+	assert(not decoded["polygons"].any(func(polygon: Dictionary) -> bool: return polygon.has("auto_surface_offset")))
 	var xpl_entry := HQRReader.read_entry(path.path_join("RESS.HQR"), 27)
 	assert(xpl_entry["ok"])
 	var xpl := PALETTE_DECODER.decode(xpl_entry["data"])

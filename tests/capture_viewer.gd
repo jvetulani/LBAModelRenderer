@@ -9,6 +9,7 @@ func _capture() -> void:
 	var game_path := ""
 	var output_path := ""
 	var yaw_degrees := 28.0
+	var zoom := 1.0
 	var body_index := 0
 	var capture_size := Vector2i(1280, 720)
 	var hide_ui := false
@@ -31,6 +32,8 @@ func _capture() -> void:
 			output_path = argument.trim_prefix("--output=")
 		elif argument.begins_with("--yaw="):
 			yaw_degrees = float(argument.trim_prefix("--yaw="))
+		elif argument.begins_with("--zoom="):
+			zoom = maxf(0.1, float(argument.trim_prefix("--zoom=")))
 		elif argument.begins_with("--body-index="):
 			body_index = int(argument.trim_prefix("--body-index="))
 		elif argument.begins_with("--size="):
@@ -116,6 +119,8 @@ func _capture() -> void:
 	if animation_frame >= 0:
 		viewer.scrub_to(animation_frame)
 		viewer.set_playing(false)
+	orbit_camera.size /= zoom
+	orbit_camera._update_pose()
 	if hide_ui:
 		for child in scene.get_children():
 			if child is CanvasLayer:

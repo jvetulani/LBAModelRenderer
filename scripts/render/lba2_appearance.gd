@@ -39,7 +39,8 @@ static func has_translucent_faces(body: Dictionary) -> bool:
 
 
 static func surface_offset_for_face(body: Dictionary, polygon: Dictionary) -> float:
+	var automatic: float = polygon.get("auto_surface_offset", 0.0)
 	for rule in body.get("appearance", {}).get("surface_offsets", []):
 		if int(rule.get("palette_index", -1)) == int(polygon["palette_index"]) and int(rule.get("render_type", -1)) == int(polygon["render_type"]):
-			return float(rule.get("offset", 0.0))
-	return 0.0
+			return automatic + float(rule.get("offset", 0.0))
+	return automatic

@@ -1,6 +1,7 @@
 class_name LBA2ModelOverrides
 extends RefCounted
 
+const DETAIL_LAYERS = preload("res://scripts/render/lba2_detail_layers.gd")
 const PATH := "res://assets/model_overrides/lba2.json"
 const DEMO_PATH := "res://assets/model_overrides/demo.json"
 static var _retail: Dictionary = {}
@@ -84,6 +85,7 @@ static func apply_geometry(body: Dictionary) -> void:
 				polygon["texture_uvs"] = repaired
 				polygons[polygon_index] = polygon
 	body["polygons"] = polygons
+	DETAIL_LAYERS.apply(body)
 
 
 static func _restore_uv_density(points: PackedInt32Array, positions: PackedVector3Array, uvs: PackedVector2Array, minimum: float) -> PackedVector2Array:
