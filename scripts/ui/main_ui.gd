@@ -58,7 +58,9 @@ var _play_icon: Texture2D
 var _pause_icon: AtlasTexture
 var _body_game := "LBA1"
 var _find_button: Button
+var _mobile_find_button: Button
 var _find_dialog: Control
+var _find_panel: PanelContainer
 var _find_query: LineEdit
 var _find_results: ItemList
 
@@ -73,6 +75,8 @@ func _ready() -> void:
 	$Screen/BodyNavigation/PreviousBody.pressed.connect(func() -> void: _step_body(-1))
 	$Screen/BodyNavigation/NextBody.pressed.connect(func() -> void: _step_body(1))
 	_setup_body_search()
+	get_viewport().size_changed.connect(_update_find_layout)
+	call_deferred("_update_find_layout")
 	platform_toggle.toggled.connect(func(visible: bool) -> void: platform_visible_changed.emit(visible))
 	shadow_toggle.toggled.connect(func(visible: bool) -> void: shadow_visible_changed.emit(visible))
 	wireframe_toggle.toggled.connect(func(visible: bool) -> void: wireframe_visible_changed.emit(visible))
@@ -120,7 +124,7 @@ func _ready() -> void:
 func set_game(game_name: String) -> void:
 	_body_game = game_name
 	palette_list.visible = game_name == "LBA2"
-	_find_button.visible = game_name in ["LBA2", "LBA2-96"]
+	_update_find_layout()
 	set_current_body(body_index())
 
 
@@ -143,6 +147,14 @@ func _setup_body_search() -> void:
 	body_number.get_parent().add_child(_find_button)
 	body_number.get_parent().move_child(_find_button, body_number.get_index() + 1)
 	_find_button.pressed.connect(_show_body_search)
+	_mobile_find_button = Button.new()
+	_mobile_find_button.text = "Find model"
+	_mobile_find_button.tooltip_text = _find_button.tooltip_text
+	_mobile_find_button.position = Vector2(12, 82)
+	_mobile_find_button.size = Vector2(112, 38)
+	_mobile_find_button.visible = false
+	$Screen.add_child(_mobile_find_button)
+	_mobile_find_button.pressed.connect(_show_body_search)
 	_find_dialog = Control.new()
 	_find_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_find_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -156,22 +168,22 @@ func _setup_body_search() -> void:
 		if event is InputEventMouseButton and event.pressed:
 			_find_dialog.hide()
 	)
-	var panel := PanelContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	panel.custom_minimum_size = Vector2(620, 500)
-	panel.position = -panel.custom_minimum_size / 2.0
-	panel.size = panel.custom_minimum_size
+	_find_panel = PanelContainer.new()
+	_find_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_find_panel.custom_minimum_size = Vector2(620, 500)
+	_find_panel.position = -_find_panel.custom_minimum_size / 2.0
+	_find_panel.size = _find_panel.custom_minimum_size
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.105, 0.14, 0.19)
 	panel_style.border_color = ACTIVE_YELLOW
 	panel_style.set_border_width_all(1)
 	panel_style.set_corner_radius_all(10)
 	panel_style.set_content_margin_all(18)
-	panel.add_theme_stylebox_override("panel", panel_style)
-	_find_dialog.add_child(panel)
+	_find_panel.add_theme_stylebox_override("panel", panel_style)
+	_find_dialog.add_child(_find_panel)
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 12)
-	panel.add_child(layout)
+	_find_panel.add_child(layout)
 	var title := Label.new()
 	title.text = "Find a model"
 	title.add_theme_color_override("font_color", ACTIVE_YELLOW)
@@ -196,6 +208,7 @@ func _setup_body_search() -> void:
 	layout.add_child(_find_results)
 	var note := Label.new()
 	note.text = "Community labels · BODY archives contain entry numbers"
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.add_theme_color_override("font_color", DISABLED_GREY)
 	layout.add_child(note)
 	var buttons := HBoxContainer.new()
@@ -212,10 +225,27 @@ func _setup_body_search() -> void:
 	_find_query.text_changed.connect(func(_value: String) -> void: _refresh_body_search())
 	_find_query.text_submitted.connect(func(_value: String) -> void: _open_found_body())
 	_find_results.item_activated.connect(func(_index: int) -> void: _open_found_body())
+	_update_find_layout()
+
+
+func _update_find_layout() -> void:
+	if _find_panel == null:
+		return
+	var viewport_size := get_viewport().get_visible_rect().size
+	var compact := viewport_size.x < 900.0
+	_find_button.visible = not compact
+	_mobile_find_button.visible = compact
+	var panel_size := Vector2(minf(620.0, viewport_size.x - 24.0), minf(500.0, viewport_size.y - 24.0))
+	_find_panel.custom_minimum_size = panel_size
+	_find_panel.offset_left = -panel_size.x / 2.0
+	_find_panel.offset_right = panel_size.x / 2.0
+	_find_panel.offset_top = -panel_size.y / 2.0
+	_find_panel.offset_bottom = panel_size.y / 2.0
 
 
 func _show_body_search() -> void:
 	_find_query.clear()
+	_find_query.placeholder_text = "Search LBA1 models…" if _body_game == "LBA1" else "Name or entry number · Zoé, pram, 203…"
 	_refresh_body_search()
 	_find_dialog.show()
 	_find_query.grab_focus()

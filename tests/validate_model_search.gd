@@ -7,6 +7,8 @@ func _initialize() -> void:
 
 func _validate() -> void:
 	assert(BODY_NAMES.LBA2_RETAIL.size() == 469)
+	assert(BODY_NAMES.LBA1_RETAIL.size() == 132)
+	assert(BODY_NAMES.name_for("LBA1", 51) == "Ferryboat")
 	assert(BODY_NAMES.name_for("LBA2", 203) == "Zoé + pram (1)")
 	assert(BODY_NAMES.name_for("LBA2-96", 4).contains("Zoé"))
 	var ui: MainUI = load("res://assets/scenes/mainui.tscn").instantiate()
@@ -25,6 +27,21 @@ func _validate() -> void:
 	ui.set_current_body(204)
 	assert(ui.body_label.text.contains("Zoé + pram"), "Current BODY name must be visible")
 	assert(ui.get("_find_dialog") is Control, "Model picker should be themed in the viewer scene")
+	ui.set_body_entry_count(132)
+	ui.set_game("LBA1")
+	query.text = "ferry"
+	ui.call("_refresh_body_search")
+	assert(results.item_count == 1 and results.get_item_metadata(0) == 51, "LBA1 ferry should be searchable")
+	query.text = "zoe"
+	ui.call("_refresh_body_search")
+	assert(results.item_count == 1 and results.get_item_metadata(0) == 48, "LBA1 Zoé should be searchable without accents")
+	root.size = Vector2i(390, 780)
+	ui.call("_update_find_layout")
+	assert(not (ui.get("_find_button") as Button).visible and (ui.get("_mobile_find_button") as Button).visible)
+	assert((ui.get("_find_panel") as PanelContainer).size.x <= 390, "Picker must fit a phone viewport")
+	root.size = Vector2i(1440, 900)
+	ui.call("_update_find_layout")
+	assert((ui.get("_find_button") as Button).visible and not (ui.get("_mobile_find_button") as Button).visible)
 	ui.queue_free()
-	print("PASS: retail model names, accent-free search, and BODY selection")
+	print("PASS: LBA1/LBA2 names, accent-free search, BODY selection, and responsive Find controls")
 	quit()

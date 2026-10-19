@@ -1,8 +1,173 @@
-# Community descriptions adapted from https://lbafileinfo.kaziq.net/index.php/LBA2:Body.hqr
-# Battler, CC BY-SA. They are labels for the retail BODY.HQR order, not names stored in the archive.
+# Community descriptions adapted from the LBA1 and LBA2 BODY catalogs at
+# https://lbafileinfo.kaziq.net/ (CC BY-SA). These are labels for BODY.HQR
+# entry numbers, not names stored in either archive.
 # Character spellings cross-checked with https://lba.fandom.com/wiki/Category:LBA2_Characters
 class_name BodyNames
 extends RefCounted
+
+# Source: https://lbafileinfo.kaziq.net/index.php/LBA1:Body.hqr
+const LBA1_RETAIL: Array[String] = [
+	"Twinsen: Tunic and Sendell's medallion model", # 0
+	"Twinsen: Prison uniform model", # 1
+	"Twinsen: Nurse uniform model", # 2
+	"Twinsen: Tunic model", # 3
+	"Twinsen: Tunic, Sendell's medallion and saber model", # 4
+	"Twinsen: Tunic, Sendell's medallion and Gawley's horn model", # 5
+	"Twinsen: Tunic, Sendell's medallion and snowboard model", # 6
+	"Twinsen: Tunic, Sendell's medallion and protopack model", # 7
+	"Twinsen: Tunic and protopack model", # 8
+	"Nurse with clipboard model", # 9
+	"Nurse with clipboard and pistol model", # 10
+	"Nurse with baton in holder model", # 11
+	"Nurse with baton in hand model", # 12
+	"Groboclone: Super model", # 13
+	"Nurse Clothing (very odd) model", # 14
+	"Meca-penguin model", # 15
+	"Garbage truck model", # 16
+	"Grobo: Green vest model", # 17
+	"Soldier: Normal model", # 18
+	"Soldier: Desert model", # 19
+	"Soldier: Himalayan model", # 20
+	"Rabbibunny: Orange male, yellow shirt and blue shorts model", # 21
+	"Rabbibunny: Brown male, blue shirt and grey-blue shorts model", # 22
+	"Rabbibunny: Orange male, yellow shirt and blue shorts, with bottle model", # 23
+	"Rabbibunny: Orange male, green shirt and brown shorts in tatters model", # 24
+	"Rabbibunny: Light brown male, yellow shirt and blue shorts in tatters model", # 25
+	"Rabbibunny: Orange male, white clothes (the painter) model", # 26
+	"Rabbibunny: Orange male, white clothes with brush (the painter) model", # 27
+	"Weird motion-seeking tank (green & yellow) model", # 28
+	"Surveillance device model", # 29
+	"Quetch: Salesman model", # 30
+	"Groboclone: Yellow model", # 31
+	"Groboclone: Green model", # 32
+	"Groboclone: Yellow without mask model", # 33
+	"Groboclone: Red without ears model", # 34
+	"Grobo: Yellow clothes and hard hat (bulldozer operator) model", # 35
+	"Rabbiclone: Yellow model", # 36
+	"Yellow triangle model", # 37
+	"Turret from automatic-spray gun thing model", # 38
+	"Robot with 2 legs model", # 39
+	"Robot with 2 legs, sphero in cockpit model", # 40
+	"Tank: Normal model", # 41
+	"Tank: Himalayan model", # 42
+	"Tank: Desert model", # 43
+	"Rabbibunny: Light brown female, orange dress model", # 44
+	"Rabbibunny: Light brown female, green dress model", # 45
+	"Rabbibunny: Brown female, yellow dress model", # 46
+	"Rabbibunny: Brown female, orange dress in tatters model", # 47
+	"Zoé model", # 48
+	"Catamaran model", # 49
+	"Catamaran with pirate flag model", # 50
+	"Ferryboat model", # 51
+	"Grobo: Pirate model", # 52
+	"Rabbibunny 12 model", # 53
+	"Fishing boat model", # 54
+	"Skeleton model", # 55
+	"Oscillating-blade thing model", # 56
+	"Small spiked log model", # 57
+	"Big spiked log model", # 58
+	"Electro-plant thing model", # 59
+	"Army boat (driver only) model)", # 60
+	"Army boat (Twinsen & rebels) model", # 61
+	"Soldier: Normal gunner model", # 62
+	"Soldier: Desert gunner model", # 63
+	"Soldier: Himalayan gunner model", # 64
+	"Radio equipment model", # 65
+	"Rabbibunny: Orange male, rebel in fatigues and mask model", # 66
+	"Rabbibunny: Orange male, rebel in fatigues model", # 67
+	"Sphero: Male rebel in fatigues model", # 68
+	"Sphero: Male, green clothes model", # 69
+	"Sphero: Male, yellow clothes model", # 70
+	"Rabbiclone: Green model", # 71
+	"Car with Twinsen model", # 72
+	"Car model", # 73
+	"Praying mantis model", # 74
+	"Spheroclone, blue-coloured model", # 75
+	"Spheroclone, red & yellow model", # 76
+	"Spheroclone, green & grey model", # 77
+	"ID card model", # 78
+	"Gawley's horn model", # 79
+	"Sendell's medallion model", # 80
+	"Rabbibunny: Orange male, white shirt and blue shorts (fisherman) model", # 81
+	"Motorcycle model", # 82
+	"Horse ridden by Twinsen model", # 83
+	"Horse model", # 84
+	"Rabbibunny: Old orange male, with space guitar model", # 85
+	"Rabbibunny: Old orange Male, with flute model", # 86
+	"Joe the Elf model", # 87
+	"Raymond the Elf model", # 88
+	"Kestrel model", # 89
+	"Mutant: Eye model", # 90
+	"Mutant: Egg model", # 91
+	"Boulder model", # 92
+	"Book of Bù model", # 93
+	"Rabbiclone: Red model", # 94
+	"Pirate flag model", # 95
+	"Sewer-snake model", # 96
+	"Proto-pack model", # 97
+	"4-Beamed tank: Normal model", # 98
+	"4-Beamed tank: Himalayan model", # 99
+	"Mutant: Crab model", # 100
+	"Mutant: Crab without legs model", # 101
+	"Mutant: Crab, front pincers model", # 102
+	"Hydroglider with Twinsen model", # 103
+	"Hydroglider model", # 104
+	"Rabbibunny: Orange male, hipster model", # 105
+	"Grobo: Female bartender model", # 106
+	"Grobo: Male hipster model", # 107
+	"Mutant: Slime blob model", # 108
+	"Dino-fly with Twinsen model", # 109
+	"Dino-fly model", # 110
+	"Rabbibunny: Guitar player with space guitar model", # 111
+	"Rabbibunny: Guitar player model", # 112
+	"Sphero: At drum set model", # 113
+	"Mutant: Twinsen model", # 114
+	"Big orange monster-thing model", # 115
+	"FunFrock model", # 116
+	"Grobo: Insane flying machine-gun dude model", # 117
+	"Shark fin, on post model", # 118
+	"Shark fin model", # 119
+	"Snowboard model", # 120
+	"Flag: Red model", # 121
+	"Flag: Green model", # 122
+	"Flag: Blue model", # 123
+	"Flag: Dark blue model", # 124
+	"Computer model", # 125
+	"Dump truck model", # 126
+	"Constuction worker 1 model", # 127
+	"Constuction worker 2 model", # 128
+	"Constuction worker 3 model", # 129
+	"Bulldozer model", # 130
+	"Sphero: weirdo model", # 131
+]
+
+const LBA1_SHORT_NAMES := {
+	0: "Twinsen (tunic, medallion)",
+	4: "Twinsen (medallion, saber)",
+	5: "Twinsen (medallion, horn)",
+	6: "Twinsen (medallion, snowboard)",
+	7: "Twinsen (medallion, protopack)",
+	21: "Rabbibunny (yellow shirt)",
+	22: "Rabbibunny (blue shirt)",
+	23: "Rabbibunny (yellow shirt, bottle)",
+	24: "Rabbibunny (tattered green shirt)",
+	25: "Rabbibunny (tattered yellow shirt)",
+	26: "Rabbibunny painter",
+	27: "Rabbibunny painter (brush)",
+	28: "Motion-seeking tank",
+	35: "Grobo bulldozer operator",
+	44: "Rabbibunny (orange dress)",
+	45: "Rabbibunny (green dress)",
+	47: "Rabbibunny (tattered dress)",
+	60: "Army boat (driver)",
+	61: "Army boat (Twinsen + rebels)",
+	66: "Rabbibunny rebel (mask)",
+	67: "Rabbibunny rebel",
+	81: "Rabbibunny fisherman",
+	85: "Old Rabbibunny (guitar)",
+	86: "Old Rabbibunny (flute)",
+	111: "Rabbibunny guitarist",
+}
 
 const LBA2_RETAIL: Array[String] = [
 	"Twinsen without tunic", # 0
@@ -520,6 +685,9 @@ const SHORT_NAMES := {
 }
 
 static func name_for(game: String, index: int) -> String:
+	if game == "LBA1" and index >= 0 and index < LBA1_RETAIL.size():
+		var name: String = LBA1_SHORT_NAMES.get(index, LBA1_RETAIL[index])
+		return name.trim_suffix(" model)").trim_suffix(" model").replace(": ", " · ")
 	if game == "LBA2" and index >= 0 and index < LBA2_RETAIL.size():
 		return SHORT_NAMES.get(index, LBA2_RETAIL[index])
 	if game == "LBA2-96":
@@ -528,6 +696,8 @@ static func name_for(game: String, index: int) -> String:
 
 static func search_text(game: String, index: int) -> String:
 	var name := name_for(game, index)
+	if game == "LBA1" and index >= 0 and index < LBA1_RETAIL.size():
+		name += " " + LBA1_RETAIL[index]
 	if game == "LBA2" and index >= 0 and index < LBA2_RETAIL.size():
 		name += " " + LBA2_RETAIL[index]
 	var aliases := " baby carriage stroller child-carry" if game == "LBA2" and index in [203, 204] else ""
