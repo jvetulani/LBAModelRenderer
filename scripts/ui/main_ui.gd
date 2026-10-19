@@ -1,6 +1,8 @@
 class_name MainUI
 extends CanvasLayer
 
+const BODY_NAMES = preload("res://scripts/ui/body_names.gd")
+
 const ACTIVE_YELLOW := Color(0.98, 0.68, 0.075)
 const INACTIVE_WHITE := Color(0.88, 0.90, 0.94)
 const DISABLED_GREY := Color(0.55, 0.59, 0.65, 0.75)
@@ -23,6 +25,7 @@ signal embed_share_requested
 
 @onready var source_field: LineEdit = $Screen/TopPanel/Vertical/SourceRow/SourceField
 @onready var body_number: LineEdit = $Screen/TopPanel/Vertical/SourceRow/BodyNumber
+@onready var body_label: Label = $Screen/TopPanel/Vertical/SourceRow/BodyLabel
 @onready var dither_mode: OptionButton = $Screen/TopPanel/Vertical/SourceRow/DitherMode
 @onready var status_label: Label = $Screen/Status
 @onready var animation_list: OptionButton = $Screen/AnimationPanel/AnimationRow/AnimationList
@@ -53,6 +56,11 @@ var _pending_export := ""
 var _body_entry_count := 0
 var _play_icon: Texture2D
 var _pause_icon: AtlasTexture
+var _body_game := "LBA1"
+var _find_button: Button
+var _find_dialog: Control
+var _find_query: LineEdit
+var _find_results: ItemList
 
 
 func _ready() -> void:
@@ -64,6 +72,7 @@ func _ready() -> void:
 	body_number.text_submitted.connect(func(_value: String) -> void: request_load())
 	$Screen/BodyNavigation/PreviousBody.pressed.connect(func() -> void: _step_body(-1))
 	$Screen/BodyNavigation/NextBody.pressed.connect(func() -> void: _step_body(1))
+	_setup_body_search()
 	platform_toggle.toggled.connect(func(visible: bool) -> void: platform_visible_changed.emit(visible))
 	shadow_toggle.toggled.connect(func(visible: bool) -> void: shadow_visible_changed.emit(visible))
 	wireframe_toggle.toggled.connect(func(visible: bool) -> void: wireframe_visible_changed.emit(visible))
@@ -109,7 +118,135 @@ func _ready() -> void:
 
 
 func set_game(game_name: String) -> void:
+	_body_game = game_name
 	palette_list.visible = game_name == "LBA2"
+	_find_button.visible = game_name in ["LBA2", "LBA2-96"]
+	set_current_body(body_index())
+
+
+func set_current_body(index: int) -> void:
+	var name := BODY_NAMES.name_for(_body_game, index)
+	body_label.text = "BODY entry" if name.is_empty() else "BODY · %s" % (name.left(28) + "…" if name.length() > 28 else name)
+	body_label.tooltip_text = name
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if _find_dialog.visible and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_find_dialog.hide()
+		get_viewport().set_input_as_handled()
+
+
+func _setup_body_search() -> void:
+	_find_button = Button.new()
+	_find_button.text = "Find…"
+	_find_button.tooltip_text = "Search BODY entries by name or number"
+	body_number.get_parent().add_child(_find_button)
+	body_number.get_parent().move_child(_find_button, body_number.get_index() + 1)
+	_find_button.pressed.connect(_show_body_search)
+	_find_dialog = Control.new()
+	_find_dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_find_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
+	_find_dialog.visible = false
+	$Screen.add_child(_find_dialog)
+	var shade := ColorRect.new()
+	shade.color = Color(0.015, 0.025, 0.04, 0.78)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_find_dialog.add_child(shade)
+	shade.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed:
+			_find_dialog.hide()
+	)
+	var panel := PanelContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	panel.custom_minimum_size = Vector2(620, 500)
+	panel.position = -panel.custom_minimum_size / 2.0
+	panel.size = panel.custom_minimum_size
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.105, 0.14, 0.19)
+	panel_style.border_color = ACTIVE_YELLOW
+	panel_style.set_border_width_all(1)
+	panel_style.set_corner_radius_all(10)
+	panel_style.set_content_margin_all(18)
+	panel.add_theme_stylebox_override("panel", panel_style)
+	_find_dialog.add_child(panel)
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 12)
+	panel.add_child(layout)
+	var title := Label.new()
+	title.text = "Find a model"
+	title.add_theme_color_override("font_color", ACTIVE_YELLOW)
+	title.add_theme_font_size_override("font_size", 21)
+	layout.add_child(title)
+	_find_query = LineEdit.new()
+	_find_query.placeholder_text = "Name or entry number · Zoé, pram, 203…"
+	layout.add_child(_find_query)
+	_find_results = ItemList.new()
+	_find_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_find_results.add_theme_color_override("font_color", INACTIVE_WHITE)
+	_find_results.add_theme_color_override("font_selected_color", Color(0.07, 0.09, 0.12))
+	var list_style := StyleBoxFlat.new()
+	list_style.bg_color = Color(0.07, 0.095, 0.13)
+	list_style.set_corner_radius_all(6)
+	_find_results.add_theme_stylebox_override("panel", list_style)
+	var selected_style := StyleBoxFlat.new()
+	selected_style.bg_color = ACTIVE_YELLOW
+	selected_style.set_corner_radius_all(4)
+	_find_results.add_theme_stylebox_override("selected", selected_style)
+	_find_results.add_theme_stylebox_override("selected_focus", selected_style)
+	layout.add_child(_find_results)
+	var note := Label.new()
+	note.text = "Community labels · BODY archives contain entry numbers"
+	note.add_theme_color_override("font_color", DISABLED_GREY)
+	layout.add_child(note)
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_END
+	layout.add_child(buttons)
+	var close_button := Button.new()
+	close_button.text = "Close"
+	buttons.add_child(close_button)
+	close_button.pressed.connect(func() -> void: _find_dialog.hide())
+	var open_button := Button.new()
+	open_button.text = "Open"
+	buttons.add_child(open_button)
+	open_button.pressed.connect(_open_found_body)
+	_find_query.text_changed.connect(func(_value: String) -> void: _refresh_body_search())
+	_find_query.text_submitted.connect(func(_value: String) -> void: _open_found_body())
+	_find_results.item_activated.connect(func(_index: int) -> void: _open_found_body())
+
+
+func _show_body_search() -> void:
+	_find_query.clear()
+	_refresh_body_search()
+	_find_dialog.show()
+	_find_query.grab_focus()
+
+
+func _refresh_body_search() -> void:
+	_find_results.clear()
+	var terms := BODY_NAMES.normalize(_find_query.text.strip_edges()).split(" ", false)
+	for index in range(_body_entry_count):
+		var haystack := BODY_NAMES.search_text(_body_game, index)
+		var matches := true
+		for term in terms:
+			if not haystack.contains(term):
+				matches = false
+				break
+		if not matches:
+			continue
+		var name := BODY_NAMES.name_for(_body_game, index)
+		_find_results.add_item("#%d · %s" % [index, name if not name.is_empty() else "Unnamed model"])
+		_find_results.set_item_metadata(_find_results.item_count - 1, index)
+	if _find_results.item_count > 0:
+		_find_results.select(0)
+
+
+func _open_found_body() -> void:
+	var selected := _find_results.get_selected_items()
+	if selected.is_empty():
+		return
+	body_number.text = str(_find_results.get_item_metadata(selected[0]))
+	_find_dialog.hide()
+	request_load()
 
 
 func set_shadow_available(available: bool) -> void:

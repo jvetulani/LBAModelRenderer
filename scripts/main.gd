@@ -105,6 +105,7 @@ func _load_source(directory: String, body_index: int) -> void:
 	orbit_camera.frame_points(result["points"], stand_point.position)
 	display_platform.set_game(viewer.game)
 	ui.set_game(viewer.game)
+	ui.set_current_body(body_index)
 	ui.set_shadow_available(result["shadow_loaded"])
 	viewer.set_dither_mode(ui.dither_mode.get_selected_id())
 	ui.set_animations(result["animations"])
