@@ -1,5 +1,7 @@
 extends SceneTree
 
+const LBA1_FACE_MODES := preload("res://scripts/render/lba1_face_modes.gd")
+
 
 func _init() -> void:
 	var lba1_dir := ""
@@ -39,6 +41,43 @@ func _init() -> void:
 			dither_polygon_count += 1
 	if dither_polygon_count != 2:
 		_fail("LBA1 BODY.HQR #0 dither material count differs from the source fixture")
+		return
+	var transparent_bodies := {}
+	var mode_counts := {2: 0, 5: 0, 6: 0}
+	for body_index in range(132):
+		var candidate_entry := HQRReader.read_entry(lba1_dir.path_join("BODY.HQR"), body_index)
+		if not candidate_entry["ok"]:
+			continue
+		var candidate: Dictionary = LBA1BodyDecoder.decode(candidate_entry["data"])
+		if not candidate["ok"]:
+			_fail("Could not inspect LBA1 BODY.HQR #%d" % body_index)
+			return
+		for polygon in candidate["polygons"]:
+			var kind: int = polygon["render_type"]
+			if kind == 2:
+				mode_counts[2] += 1
+			if kind in [5, 6]:
+				mode_counts[kind] += 1
+				transparent_bodies[body_index] = true
+				if not LBA1_FACE_MODES.is_transparent(candidate, polygon):
+					_fail("Source transparent face was not classified")
+					return
+	if mode_counts[5] != 15 or mode_counts[6] != 14 or transparent_bodies.size() != 9 or not transparent_bodies.has(130) or transparent_bodies.has(54):
+		_fail("LBA1 transparency face audit differs from the archive")
+		return
+	var digger_entry := HQRReader.read_entry(lba1_dir.path_join("BODY.HQR"), 130)
+	var digger: Dictionary = LBA1BodyDecoder.decode(digger_entry["data"])
+	var digger_node := CharacterMeshBuilder.build_static_pose(digger, HQRReader.read_entry(lba1_dir.path_join("RESS.HQR"), 0)["data"])
+	if not digger_node.has_node("LBA1TransparentPolygons") or digger_node.get_node("LBA1TransparentPolygons").mesh.surface_get_array_len(0) == 0:
+		digger_node.free()
+		_fail("Digger glass faces were not split into a transparent mesh")
+		return
+	digger_node.free()
+	var boat_entry := HQRReader.read_entry(lba1_dir.path_join("BODY.HQR"), 54)
+	var boat: Dictionary = LBA1BodyDecoder.decode(boat_entry["data"])
+	var boat_copper_faces: int = boat["polygons"].filter(func(polygon: Dictionary) -> bool: return int(polygon["render_type"]) == 2).size()
+	if boat_copper_faces != 3 or mode_counts[2] != 43:
+		_fail("LBA1 copper window face audit differs from the archive")
 		return
 
 	var palette_entry := HQRReader.read_entry(lba1_dir.path_join("RESS.HQR"), 0)

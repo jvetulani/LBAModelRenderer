@@ -6,6 +6,7 @@ extends RefCounted
 const SCALE := CharacterMeshBuilder.UNIT_SCALE
 const LIGHT_VECTOR := Vector3(-25.8, 37.6, 37.6)
 const LBA2_APPEARANCE := preload("res://scripts/render/lba2_appearance.gd")
+const LBA1_FACE_MODES := preload("res://scripts/render/lba1_face_modes.gd")
 
 
 class MeshCollector:
@@ -147,8 +148,9 @@ static func _build_single_scene(input: Dictionary, body_index: int = -1) -> Dict
 		skeleton.set_bone_rest(group_index, Transform3D(Basis.IDENTITY, local_origin))
 	var collector := MeshCollector.new()
 	var glass_collector := MeshCollector.new()
+	var copper_collector := MeshCollector.new()
 	var textured_collectors := {}
-	_add_polygons(collector, textured_collectors, body, offset, glass_collector)
+	_add_polygons(collector, textured_collectors, body, offset, glass_collector, copper_collector)
 	var translucent_solid: bool = LBA2_APPEARANCE.uses_translucent_solid(body)
 	var accents := MeshCollector.new() if translucent_solid else collector
 	_add_spheres(accents, body, offset)
@@ -184,9 +186,18 @@ static func _build_single_scene(input: Dictionary, body_index: int = -1) -> Dict
 		glass_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		glass_material.albedo_texture = material.albedo_texture
 		glass_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		glass_material.albedo_color.a = float(body.get("appearance", {}).get("opacity", LBA2_APPEARANCE.SPECTRAL_OPACITY))
+		glass_material.albedo_color.a = 0.5 if LBA1_FACE_MODES.has_transparent_faces(body) else float(body.get("appearance", {}).get("opacity", LBA2_APPEARANCE.SPECTRAL_OPACITY))
 		glass_material.cull_mode = BaseMaterial3D.CULL_BACK
 		mesh.surface_set_material(mesh.get_surface_count() - 1, glass_material)
+	if not copper_collector.vertices.is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, copper_collector.arrays())
+		var copper_material := StandardMaterial3D.new()
+		copper_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		copper_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		copper_material.texture_repeat = false
+		copper_material.albedo_texture = ImageTexture.create_from_image(_copper_ramp_image(palette))
+		copper_material.cull_mode = BaseMaterial3D.CULL_BACK
+		mesh.surface_set_material(mesh.get_surface_count() - 1, copper_material)
 	if translucent_solid and not accents.vertices.is_empty():
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, accents.arrays())
 		var accent_material := StandardMaterial3D.new()
@@ -250,7 +261,7 @@ static func _build_single_scene(input: Dictionary, body_index: int = -1) -> Dict
 			library.add_animation(name + "_loop", _make_animation(skeleton, decoded, loop_frames, angle_scale, tick_rate, body))
 			exported_clips += 1
 	player.add_animation_library("", library)
-	return {"ok": true, "scene": scene, "skeleton": skeleton, "player": player, "body_index": body_index, "animations": exported_clips, "source_actions": clips.size(), "vertices": collector.vertices.size() + texture_vertex_count}
+	return {"ok": true, "scene": scene, "skeleton": skeleton, "player": player, "body_index": body_index, "animations": exported_clips, "source_actions": clips.size(), "vertices": collector.vertices.size() + glass_collector.vertices.size() + copper_collector.vertices.size() + texture_vertex_count}
 
 
 static func _palette_image(bytes: PackedByteArray, eight_bit: bool = false) -> Image:
@@ -259,6 +270,16 @@ static func _palette_image(bytes: PackedByteArray, eight_bit: bool = false) -> I
 		var at := index * 3
 		var divisor := 255.0 if eight_bit else 63.0
 		image.set_pixel(index, 0, Color(float(bytes[at] if eight_bit else bytes[at] >> 2) / divisor, float(bytes[at + 1] if eight_bit else bytes[at + 1] >> 2) / divisor, float(bytes[at + 2] if eight_bit else bytes[at + 2] >> 2) / divisor))
+	return image
+
+
+static func _copper_ramp_image(palette: PackedByteArray) -> Image:
+	var source := _palette_image(palette)
+	var image := Image.create_empty(16, 32, false, Image.FORMAT_RGBA8)
+	for y in range(32):
+		var shade := mini(y, 31 - y)
+		for ramp in range(16):
+			image.set_pixel(ramp, y, source.get_pixel(ramp * 16 + shade, 0))
 	return image
 
 
@@ -289,12 +310,19 @@ static func _texture_tile_image(indices: PackedByteArray, palette: PackedByteArr
 	return Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, colors)
 
 
-static func _add_polygons(collector: MeshCollector, textured: Dictionary, body: Dictionary, offset: Vector3, glass_collector: MeshCollector) -> void:
+static func _add_polygons(collector: MeshCollector, textured: Dictionary, body: Dictionary, offset: Vector3, glass_collector: MeshCollector, copper_collector: MeshCollector) -> void:
 	var points: PackedVector3Array = body["pose_points"]
 	var point_groups: PackedInt32Array = body["point_groups"]
 	var is_lba2: bool = body.get("game", "LBA1") == "LBA2"
 	for polygon in body["polygons"]:
 		var indices: PackedInt32Array = polygon["points"]
+		var copper_face: bool = body.get("game", "LBA1") == "LBA1" and int(polygon["render_type"]) == 2
+		var face_top := -INF
+		var face_bottom := INF
+		if copper_face:
+			for index in indices:
+				face_top = maxf(face_top, points[index].y)
+				face_bottom = minf(face_bottom, points[index].y)
 		var normals: PackedInt32Array = polygon["normals"]
 		var face_normal := (points[indices[1]] - points[indices[0]]).cross(points[indices[2]] - points[indices[0]]).normalized()
 		var surface_offset := LBA2_APPEARANCE.surface_offset_for_face(body, polygon)
@@ -331,8 +359,12 @@ static func _add_polygons(collector: MeshCollector, textured: Dictionary, body: 
 					if texture_offset > 0.0:
 						position += Vector3(position.x, 0.0, position.z).normalized() * texture_offset
 					texture_collector.add_uv(position, normal, atlas_uv, point_groups[point_index])
+				elif copper_face:
+					var ramp := floori(float(polygon["palette_index"]) / 16.0)
+					var uv := Vector2((float(ramp) + 0.5) / 16.0, clampf((face_top - points[point_index].y) / maxf(face_top - face_bottom, 1.0), 0.0, 1.0))
+					copper_collector.add_uv(points[point_index] * SCALE + offset, normal, uv, point_groups[point_index])
 				else:
-					var target := glass_collector if LBA2_APPEARANCE.is_translucent_face(body, polygon) else collector
+					var target := glass_collector if LBA2_APPEARANCE.is_translucent_face(body, polygon) or LBA1_FACE_MODES.is_transparent(body, polygon) else collector
 					target.add(points[point_index] * SCALE + offset + face_normal * surface_offset, normal, color_index, point_groups[point_index], polygon["render_type"])
 
 

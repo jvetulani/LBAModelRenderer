@@ -11,7 +11,7 @@ func _init() -> void:
 		return
 	var viewer := CharacterViewer.new()
 	root.add_child(viewer)
-	for body_index in [17, 0, 30]:
+	for body_index in [17, 0, 30, 54, 56, 130]:
 		var loaded := viewer.load_body(source, body_index)
 		if not loaded["ok"]:
 			_fail(loaded["error"])
@@ -37,6 +37,9 @@ func _init() -> void:
 		var expected := int(export_result["animations"])
 		if state.get_animations().size() != expected or state.get_skins().size() != 1:
 			_fail("GLB lacks actions or skin: %d/%d animations, %d skins" % [state.get_animations().size(), expected, state.get_skins().size()])
+			return
+		if body_index in [54, 56, 130] and state.get_materials().size() < 2:
+			_fail("Boat copper or digger glass export material is missing")
 			return
 		print("PASS: BODY #%d: %d actions, %d GLB animations, %d vertices, %d bytes, skin and reimport" % [body_index, export_result["source_actions"], expected, export_result["vertices"], bytes.size()])
 	quit(0)

@@ -6,6 +6,7 @@ uniform sampler2D texture_atlas : filter_nearest, repeat_disable;
 uniform sampler2D shade_table : filter_nearest, repeat_disable;
 uniform bool has_texture_atlas = false;
 uniform bool has_shade_table = false;
+uniform bool lba1_copper_faces = false;
 // Preview shading stays inside the source palette's 16-colour ramps.
 uniform float palette_ramp_size = 0.0;
 uniform float normal_light_level = 12.0;
@@ -53,7 +54,17 @@ vec2 anchored_dither_coord() {
 
 float anchored_dither_threshold(vec2 coord) {
 	vec2 cell = floor(coord);
-	return fract(52.9829189 * fract(dot(cell, vec2(0.06711056, 0.00583715))));
+	vec2 tile = floor(cell / 8.0);
+	vec2 local = mod(cell, 8.0);
+	int turn = int(floor(dither_hash(tile + vec2(19.0, 7.0)) * 4.0));
+	if (turn == 1) {
+		local = vec2(7.0 - local.y, local.x);
+	} else if (turn == 2) {
+		local = vec2(7.0 - local.x, 7.0 - local.y);
+	} else if (turn == 3) {
+		local = vec2(local.y, 7.0 - local.x);
+	}
+	return dither_hash(local + tile * vec2(37.0, 53.0));
 }
 
 float anchored_dither_weight(vec2 coord) {
@@ -144,6 +155,14 @@ void fragment() {
 			}
 		}
 		ALBEDO = has_shade_table && (dither_mode == 3 || dither_mode == 4) ? shaded_color : texture(palette_texture, vec2((texel + 0.5) / 256.0, 0.5)).rgb;
+		ROUGHNESS = 1.0;
+	} else if (lba1_copper_faces && source_render_type == 2.0) {
+		// SVGAPolyCopper walks up and down the source 16-colour ramp, one
+		// step per VGA scanline. Preserve that band scale at large viewports.
+		float source_line = floor(FRAGCOORD.y / max(VIEWPORT_SIZE.y / 480.0, 1.0));
+		float ramp_step = 15.0 - abs(mod(source_line, 30.0) - 15.0);
+		float index = floor(source_base_index / 16.0) * 16.0 + ramp_step;
+		ALBEDO = texture(palette_texture, vec2((index + 0.5) / 256.0, 0.5)).rgb;
 		ROUGHNESS = 1.0;
 	} else if (platform_style) {
 		float lit = max(dot(normalize(pixel_source_normal), normalize(source_light_vector)), 0.0);

@@ -48,7 +48,17 @@ vec2 anchored_dither_coord() {
 
 float anchored_dither_threshold(vec2 coord) {
 	vec2 cell = floor(coord);
-	return fract(52.9829189 * fract(dot(cell, vec2(0.06711056, 0.00583715))));
+	vec2 tile = floor(cell / 8.0);
+	vec2 local = mod(cell, 8.0);
+	int turn = int(floor(dither_hash(tile + vec2(19.0, 7.0)) * 4.0));
+	if (turn == 1) {
+		local = vec2(7.0 - local.y, local.x);
+	} else if (turn == 2) {
+		local = vec2(7.0 - local.x, 7.0 - local.y);
+	} else if (turn == 3) {
+		local = vec2(local.y, 7.0 - local.x);
+	}
+	return dither_hash(local + tile * vec2(37.0, 53.0));
 }
 
 float anchored_dither_weight(vec2 coord) {

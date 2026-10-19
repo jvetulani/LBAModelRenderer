@@ -8,6 +8,8 @@ const LBA2_SPECTRAL_OVERLAY := preload("res://shaders/lba2_spectral_overlay.gdsh
 const LBA2_FIREBALL := preload("res://shaders/lba2_fireball.gdshader")
 const LBA2_TRANSLUCENT_SOLID := preload("res://shaders/lba2_translucent_solid.gdshader")
 const LBA2_APPEARANCE := preload("res://scripts/render/lba2_appearance.gd")
+const LBA1_FACE_MODES := preload("res://scripts/render/lba1_face_modes.gd")
+const LBA1_TRANSPARENT_FACE := preload("res://shaders/lba1_transparent_face.gdshader")
 const WIREFRAME_SHADER := preload("res://shaders/wireframe_overlay.gdshader")
 
 
@@ -45,6 +47,8 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray, 
 		polygons_node.material_override = effect_material
 	else:
 		polygons_node.material_override = _make_material(palette_texture, -1, is_lba2, atlas_texture, shade_texture, body.get("normal_light_level", 12))
+		if body.get("game", "LBA1") == "LBA1":
+			polygons_node.material_override.set_shader_parameter("lba1_copper_faces", true)
 		if is_lba2:
 			polygons_node.material_override.set_shader_parameter("reverse_shade_strength", float(body.get("appearance", {}).get("reverse_shade_strength", 0.0)))
 	if is_lba2 and atlas_texture != null and LBA2_APPEARANCE.uses_spectral_preview(body):
@@ -70,6 +74,15 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray, 
 		glass_material.shader = LBA2_TRANSLUCENT_SOLID
 		glass_material.set_shader_parameter("palette_texture", palette_texture)
 		glass_material.set_shader_parameter("opacity", body["appearance"].get("opacity", LBA2_APPEARANCE.SPECTRAL_OPACITY))
+		glass.material_override = glass_material
+		character.add_child(glass)
+	if LBA1_FACE_MODES.has_transparent_faces(body):
+		var glass := MeshInstance3D.new()
+		glass.name = "LBA1TransparentPolygons"
+		glass.mesh = _build_polygon_mesh(body, points, [], true)
+		var glass_material := ShaderMaterial.new()
+		glass_material.shader = LBA1_TRANSPARENT_FACE
+		glass_material.set_shader_parameter("palette_texture", palette_texture)
 		glass.material_override = glass_material
 		character.add_child(glass)
 
@@ -114,6 +127,8 @@ static func update_pose(character: Node3D, body: Dictionary, pose: Dictionary) -
 		wireframe.mesh = _build_wire_mesh(body, points)
 	if character.has_node("TranslucentPolygons"):
 		character.get_node("TranslucentPolygons").mesh = _build_polygon_mesh(body, points, pose["bases"], true)
+	if character.has_node("LBA1TransparentPolygons"):
+		character.get_node("LBA1TransparentPolygons").mesh = _build_polygon_mesh(body, points, pose["bases"], true)
 	for child in character.get_children():
 		if child.has_meta("center_index"):
 			child.position = points[int(child.get_meta("center_index"))] * UNIT_SCALE
@@ -178,7 +193,7 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 	var is_lba2: bool = body.get("game", "LBA1") == "LBA2"
 
 	for polygon in body["polygons"]:
-		if LBA2_APPEARANCE.is_translucent_face(body, polygon) != glass_only:
+		if (LBA2_APPEARANCE.is_translucent_face(body, polygon) or LBA1_FACE_MODES.is_transparent(body, polygon)) != glass_only:
 			continue
 		var point_indices: PackedInt32Array = polygon["points"]
 		var normal_indices: PackedInt32Array = polygon["normals"]

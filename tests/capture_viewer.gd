@@ -130,6 +130,8 @@ func _capture() -> void:
 		polygon_mesh.hide()
 	if hide_glass and character.has_node("TranslucentPolygons"):
 		character.get_node("TranslucentPolygons").hide()
+	if hide_glass and character.has_node("LBA1TransparentPolygons"):
+		character.get_node("LBA1TransparentPolygons").hide()
 	print("Viewer mesh vertices: ", polygon_mesh.mesh.surface_get_array_len(0))
 	print("Character child meshes: ", character.get_child_count())
 	print("Status: ", ui.status_label.text)
