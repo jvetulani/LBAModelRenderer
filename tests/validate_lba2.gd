@@ -104,6 +104,26 @@ func _init() -> void:
 		assert(effect_body["ok"] and LBA2_APPEARANCE.has_translucent_faces(effect_body))
 		assert(effect_body["polygons"].any(func(polygon: Dictionary) -> bool: return LBA2_APPEARANCE.is_translucent_face(effect_body, polygon)))
 	assert(not LBA2_APPEARANCE.has_translucent_faces(decoded))
+	for kangaroo_index in [308, 309]:
+		assert(viewer.load_body(path, kangaroo_index)["ok"])
+		assert(not viewer.body.get("appearance", {}).has("capped_palette_shade"))
+		assert(viewer.body["polygons"].any(func(face: Dictionary) -> bool: return int(face["palette_index"]) == 79 and int(face["render_type"]) == 5))
+	var kangaroo_export := LBA1GLBExporter.build(viewer.export_input())
+	assert(kangaroo_export["ok"], "Kangaroo GLB export failed")
+	var kangaroo_state := GLTFState.new()
+	assert(GLTFDocument.new().append_from_buffer(kangaroo_export["bytes"], "", kangaroo_state) == OK, "Kangaroo GLB reimport failed")
+	var kangaroo_part := LBA1GLBExporter._build_single_scene(viewer.export_input())
+	assert(kangaroo_part["ok"])
+	var kangaroo_mesh: MeshInstance3D = kangaroo_part["scene"].find_child("CharacterMesh", true, false)
+	var exported_uvs: PackedVector2Array = kangaroo_mesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]
+	var has_orange_skin := false
+	for uv in exported_uvs:
+		var index := uv.x * 256.0 - 0.5
+		if index >= 80.0 and index < 96.0:
+			has_orange_skin = true
+			break
+	assert(has_orange_skin, "Kangaroo GLB mesh lost the orange skin ramp")
+	kangaroo_part["scene"].free()
 	var chest_animation: Dictionary = LBA1AnimationDecoder.decode(HQRReader.read_entry(path.path_join("ANIM.HQR"), 1489)["data"])
 	assert(chest_animation["ok"])
 	for chest_index in [329, 330]:
@@ -273,6 +293,11 @@ func _init() -> void:
 	assert(document.append_from_buffer(fireball_export["bytes"], "", fireball_state) == OK)
 	print("Fireball GLB material modes: ", fireball_state.get_materials().map(func(surface: Material) -> String: return "%s/%s" % [surface.transparency, surface.albedo_color] if surface is BaseMaterial3D else str(surface)))
 	assert(fireball_state.get_materials().any(func(surface: Material) -> bool: return surface is BaseMaterial3D and surface.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED and surface.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR))
+	assert(viewer.load_body(path, 90)["ok"])
+	assert(float(viewer.body["polygons"][3].get("auto_surface_offset", 0.0)) > 0.0, "BODY #90 mouth lost its depth clearance")
+	assert(viewer.load_body(path, 379)["ok"])
+	assert(viewer.body["polygons"].any(func(face: Dictionary) -> bool: return face.get("clamp_light_ramp", false) and int(face["palette_index"]) == 236), "BODY #379 paper must stay within its white palette ramp")
+	assert(not viewer.body["polygons"].any(func(face: Dictionary) -> bool: return face.get("clamp_light_ramp", false) and int(face["palette_index"]) != 236), "BODY #379 non-paper shading changed")
 	var zero_duration_loaded := viewer.load_body(path, 394)
 	assert(zero_duration_loaded["ok"])
 	var zero_duration_selected := viewer.select_animation(1738)

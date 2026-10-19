@@ -68,4 +68,18 @@ func _validate() -> void:
 	var frame_one: Array = viewer.character.get_node("Polygons").mesh.surface_get_arrays(0)
 	assert(frame_one[Mesh.ARRAY_VERTEX] != frame_zero[Mesh.ARRAY_VERTEX], "Animation fixture must move")
 	assert(frame_one[Mesh.ARRAY_CUSTOM2] == frame_zero[Mesh.ARRAY_CUSTOM2], "Dither anchors must stay fixed during animation")
+	scene.call("_load_source", LBA2, 370)
+	var camera: OrbitCamera = scene.get_node("OrbitCamera")
+	var fitted_size := camera.size
+	for step in range(4):
+		var zoom_in := InputEventMouseButton.new()
+		zoom_in.button_index = MOUSE_BUTTON_WHEEL_UP
+		zoom_in.pressed = true
+		camera._unhandled_input(zoom_in)
+	for step in range(6):
+		var zoom_out := InputEventMouseButton.new()
+		zoom_out.button_index = MOUSE_BUTTON_WHEEL_DOWN
+		zoom_out.pressed = true
+		camera._unhandled_input(zoom_out)
+	assert(camera.size >= fitted_size, "BODY #370 must zoom back out past its initial fitted size")
 	quit()

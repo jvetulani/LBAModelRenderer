@@ -49,8 +49,6 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray, 
 		polygons_node.material_override = _make_material(palette_texture, -1, is_lba2, atlas_texture, shade_texture, body.get("normal_light_level", 12))
 		if body.get("game", "LBA1") == "LBA1":
 			polygons_node.material_override.set_shader_parameter("lba1_palette_effects", true)
-		if is_lba2:
-			polygons_node.material_override.set_shader_parameter("reverse_shade_strength", float(body.get("appearance", {}).get("reverse_shade_strength", 0.0)))
 	if is_lba2 and atlas_texture != null and LBA2_APPEARANCE.uses_spectral_preview(body):
 		var overlay := ShaderMaterial.new()
 		overlay.shader = LBA2_SPECTRAL_OVERLAY
@@ -241,7 +239,7 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 						normal = source_normal.normalized()
 				vertex_normals.append(normal)
 				palette_coordinates.append(Vector2(float(polygon["palette_index"]), float(polygon["render_type"])))
-				source_normals.append_array(PackedFloat32Array([source_normal.x, source_normal.y, source_normal.z, divisor]))
+				source_normals.append_array(PackedFloat32Array([source_normal.x, source_normal.y, source_normal.z, -1.0 if is_lba2 and polygon.get("clamp_light_ramp", false) else divisor]))
 				var texture_uv := Vector2.ZERO
 				var texture_region := PackedFloat32Array([0.0, 0.0, 255.0, 255.0])
 				if marble_face:

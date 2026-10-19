@@ -18,6 +18,8 @@ uniform float mesh_light_span = 7.0;
 uniform int dither_mode = 4;
 uniform float dither_pixel_scale = 1.0;
 uniform float soft_dither_strength = 0.7;
+// Preview experiments: 0 = current, 1 = quiet smooth, 2 = palette-only flats.
+uniform int soft_dither_profile = 1;
 uniform bool platform_style = false;
 // Approximate integer vector from LBA1 SetLightVector(896, 950, 0): a
 // 59-unit light rotated by the game's angle convention. Scene light changes
@@ -70,6 +72,32 @@ float anchored_dither_threshold(vec2 coord) {
 float anchored_dither_weight(vec2 coord) {
 	float footprint = max(length(dFdx(coord)), length(dFdy(coord)));
 	return 1.0 - smoothstep(0.75, 1.5, footprint);
+}
+
+float transition_dither_coverage(vec3 lower_color, vec3 upper_color, float shade) {
+	// Estimate visible colour change over a patch, rather than gating every
+	// palette step separately. The latter makes flat/dither/flat stripes.
+	float shade_slope = length(vec2(dFdx(shade), dFdy(shade)));
+	float visible_change = length(upper_color - lower_color) * shade_slope * 64.0;
+	return smoothstep(0.08, 0.22, visible_change);
+}
+
+vec3 preview_dither_blend(vec3 lower_color, vec3 upper_color, float shade, vec2 coord) {
+	float fraction = fract(shade);
+	float threshold = anchored_dither_threshold(coord);
+	vec3 smooth_color = mix(lower_color, upper_color, fraction);
+	vec3 stepped_color = fraction > threshold ? upper_color : lower_color;
+	float footprint = anchored_dither_weight(coord);
+	if (soft_dither_profile == 0) {
+		return mix(smooth_color, stepped_color, footprint * soft_dither_strength);
+	}
+	float coverage = transition_dither_coverage(lower_color, upper_color, shade) * footprint;
+	if (soft_dither_profile == 1) {
+		return mix(smooth_color, stepped_color, coverage * soft_dither_strength * 0.8);
+	}
+	float nearest = step(0.5, fraction);
+	float active_fraction = mix(nearest, fraction, coverage);
+	return active_fraction > threshold ? upper_color : lower_color;
 }
 
 float keep_in_palette_ramp(float base_index, float lit_index) {
@@ -149,8 +177,7 @@ void fragment() {
 				shaded_color = mix(lower_color, upper_color, fraction);
 				if (soft_shade) {
 					vec2 coord = anchored_dither_coord();
-					vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
-					shaded_color = mix(shaded_color, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
+					shaded_color = preview_dither_blend(lower_color, upper_color, lighting, coord);
 				}
 			}
 		}
@@ -201,8 +228,7 @@ void fragment() {
 		ALBEDO = mix(lower_color, upper_color, fraction);
 		if (dither_mode == 4) {
 			vec2 coord = anchored_dither_coord();
-			vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
-			ALBEDO = mix(ALBEDO, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
+			ALBEDO = preview_dither_blend(lower_color, upper_color, smooth_index, coord);
 		}
 		ROUGHNESS = 1.0;
 	} else {

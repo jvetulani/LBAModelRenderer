@@ -18,6 +18,7 @@ func _capture() -> void:
 	var hide_platform := false
 	var dither_mode := 4
 	var soft_strength := -1.0
+	var soft_profile := 1
 	var animation_index := -1
 	var animation_frame := -1
 	var palette_index := -1
@@ -56,6 +57,8 @@ func _capture() -> void:
 			dither_mode = 4
 		elif argument.begins_with("--soft-strength="):
 			soft_strength = float(argument.trim_prefix("--soft-strength="))
+		elif argument.begins_with("--soft-profile="):
+			soft_profile = clampi(int(argument.trim_prefix("--soft-profile=")), 0, 2)
 		elif argument == "--shading=smooth":
 			dither_mode = 3
 		elif argument.begins_with("--anim-index="):
@@ -119,6 +122,7 @@ func _capture() -> void:
 	if animation_frame >= 0:
 		viewer.scrub_to(animation_frame)
 		viewer.set_playing(false)
+	(viewer.character.get_node("Polygons").material_override as ShaderMaterial).set_shader_parameter("soft_dither_profile", soft_profile)
 	orbit_camera.size /= zoom
 	orbit_camera._update_pose()
 	if hide_ui:
@@ -137,7 +141,7 @@ func _capture() -> void:
 		character.get_node("TranslucentPolygons").hide()
 	if hide_glass and character.has_node("LBA1TransparentPolygons"):
 		character.get_node("LBA1TransparentPolygons").hide()
-	print("Viewer mesh vertices: ", polygon_mesh.mesh.surface_get_array_len(0))
+	print("Viewer mesh vertices: ", polygon_mesh.mesh.surface_get_array_len(0) if polygon_mesh.mesh.get_surface_count() > 0 else 0)
 	print("Character child meshes: ", character.get_child_count())
 	print("Status: ", ui.status_label.text)
 	print("Associated animations: ", viewer.animation_entries.size())

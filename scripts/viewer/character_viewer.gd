@@ -111,6 +111,7 @@ func _load_body(body_index: int) -> Dictionary:
 	elif is_demo:
 		decoded["game"] = "LBA2-96"
 		decoded["appearance"] = LBA2_OVERRIDES.for_demo_body(body_index)
+		LBA2_OVERRIDES.apply_geometry(decoded)
 		# The 1996 XPL stores the RGB palette first, then its 256x256 shade CLUT.
 		decoded["shade_table"] = palette_entry["data"].slice(768, 768 + 65536)
 		decoded["normal_light_level"] = 12

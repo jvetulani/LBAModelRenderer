@@ -407,7 +407,9 @@ static func _add_polygons(collector: MeshCollector, textured: Dictionary, body: 
 							var divisor := maxf(1.0, float(body["normal_divisors"][normal_index]))
 							color_index += maxf(source_normal.dot(LIGHT_VECTOR), 0.0) / divisor
 				if is_lba2:
-					color_index = minf(color_index, floorf(float(polygon["palette_index"]) / 16.0) * 16.0 + 15.0)
+					var base_index: int = polygon["palette_index"]
+					if polygon.get("clamp_light_ramp", false) or int(polygon["render_type"]) not in [1, 4, 5]:
+						color_index = minf(color_index, float(base_index / 16 * 16 + 15))
 				if polygon.get("texture_handle", -1) >= 0:
 					var raw_uv: Vector2 = polygon["texture_uvs"][corner]
 					var mask: Vector2 = polygon["texture_mask"]

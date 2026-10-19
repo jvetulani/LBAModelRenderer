@@ -5,6 +5,7 @@ var yaw := deg_to_rad(20.0)
 var pitch := deg_to_rad(12.0)
 var distance := 4.4
 var focus := Vector3(0.0, 0.75, 0.0)
+var maximum_size := 12.0
 
 
 func _ready() -> void:
@@ -23,6 +24,7 @@ func frame_points(points: PackedVector3Array, stand_position: Vector3) -> void:
 	var horizontal_span := Vector2(extent.x, extent.z).length()
 	focus = stand_position + Vector3((minimum.x + maximum.x) * 0.5 * CharacterMeshBuilder.UNIT_SCALE, extent.y * 0.5, (minimum.z + maximum.z) * 0.5 * CharacterMeshBuilder.UNIT_SCALE)
 	size = maxf(1.8, maxf(extent.y, horizontal_span / aspect) * 1.45)
+	maximum_size = maxf(12.0, size * 2.0)
 	distance = maxf(3.0, size * 1.8)
 	_update_pose()
 
@@ -42,7 +44,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			size = maxf(0.8, size * 0.9)
 			_update_pose()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			size = minf(12.0, size * 1.1)
+			size = minf(maximum_size, size * 1.1)
 			_update_pose()
 
 

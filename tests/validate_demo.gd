@@ -91,6 +91,20 @@ func _init() -> void:
 			if material is BaseMaterial3D and material.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED and material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
 				blend_found = true
 		assert(blend_found, "Demo case GLB lost translucent panes")
+	for body_index in [58, 65, 73]:
+		var effect_loaded := viewer.load_body(DEMO_PATH, body_index)
+		assert(effect_loaded["ok"] and viewer.character.has_node("TranslucentPolygons"), "Demo BODY #%d lost source transparent faces" % body_index)
+		var source_faces: int = viewer.body["polygons"].filter(func(polygon: Dictionary) -> bool: return int(polygon["render_type"]) in [5, 6]).size()
+		var separated_faces: int = viewer.body["polygons"].filter(func(polygon: Dictionary) -> bool: return LBA2Appearance.is_translucent_face(viewer.body, polygon)).size()
+		assert(source_faces == separated_faces and source_faces > 0, "Demo BODY #%d has opaque source transparent faces" % body_index)
+	assert(viewer.load_body(DEMO_PATH, 65)["ok"])
+	var visor_export := LBA1GLBExporter.build(viewer.export_input())
+	assert(visor_export["ok"], "Demo BODY #65 GLB export failed")
+	var visor_state := GLTFState.new()
+	assert(GLTFDocument.new().append_from_buffer(visor_export["bytes"], "", visor_state) == OK)
+	assert(visor_state.get_materials().any(func(material: Material) -> bool: return material is BaseMaterial3D and material.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED and material.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR), "Demo visor GLB lost transparency")
+	assert(viewer.load_body(DEMO_PATH, 64)["ok"])
+	assert(float(viewer.body["polygons"][20].get("auto_surface_offset", 0.0)) > 0.0 and float(viewer.body["polygons"][29].get("auto_surface_offset", 0.0)) > 0.0, "Demo BODY #64 mustache lost its depth clearance")
 	print("LBA2-96: %d/%d bodies, %d associated animations (%d with fewer groups), GLB %d bytes" % [valid, first["entry_count"], associated_count, short_actions, exported["bytes"].size()])
 	print("Decode failures: ", failures)
 	quit()

@@ -12,10 +12,11 @@ uniform int palette_index_override = -1;
 uniform bool use_mesh_lighting = false;
 uniform float mesh_light_span = 10.0;
 uniform float preview_ambient_level = 2.0;
-uniform float reverse_shade_strength = 0.0;
 uniform int dither_mode = 4;
 uniform float dither_pixel_scale = 1.0;
 uniform float soft_dither_strength = 0.7;
+// Preview experiments: 0 = current, 1 = quiet smooth, 2 = palette-only flats.
+uniform int soft_dither_profile = 1;
 uniform vec3 source_light_vector = vec3(-4.4, 6.41, 6.41);
 
 varying flat float face_palette_index;
@@ -26,6 +27,7 @@ varying vec3 pixel_normal;
 varying vec2 affine_uv_times_w;
 varying float affine_w;
 varying vec3 dither_anchor;
+varying flat float clamp_light_ramp;
 
 float dither_hash(vec2 coordinate) {
 	return fract(sin(dot(coordinate, vec2(127.1, 311.7))) * 43758.5453);
@@ -66,6 +68,32 @@ float anchored_dither_weight(vec2 coord) {
 	return 1.0 - smoothstep(0.75, 1.5, footprint);
 }
 
+float transition_dither_coverage(vec3 lower_color, vec3 upper_color, float shade) {
+	// Estimate visible colour change over a patch, rather than gating every
+	// palette step separately. The latter makes flat/dither/flat stripes.
+	float shade_slope = length(vec2(dFdx(shade), dFdy(shade)));
+	float visible_change = length(upper_color - lower_color) * shade_slope * 64.0;
+	return smoothstep(0.08, 0.22, visible_change);
+}
+
+vec3 preview_dither_blend(vec3 lower_color, vec3 upper_color, float shade, vec2 coord) {
+	float fraction = fract(shade);
+	float threshold = anchored_dither_threshold(coord);
+	vec3 smooth_color = mix(lower_color, upper_color, fraction);
+	vec3 stepped_color = fraction > threshold ? upper_color : lower_color;
+	float footprint = anchored_dither_weight(coord);
+	if (soft_dither_profile == 0) {
+		return mix(smooth_color, stepped_color, footprint * soft_dither_strength);
+	}
+	float coverage = transition_dither_coverage(lower_color, upper_color, shade) * footprint;
+	if (soft_dither_profile == 1) {
+		return mix(smooth_color, stepped_color, coverage * soft_dither_strength * 0.8);
+	}
+	float nearest = step(0.5, fraction);
+	float active_fraction = mix(nearest, fraction, coverage);
+	return active_fraction > threshold ? upper_color : lower_color;
+}
+
 float varied_bayer_threshold(vec2 screen_pixel, float cell) {
 	vec2 grid_pixel = floor(screen_pixel / cell);
 	vec2 tile = floor(grid_pixel / 4.0);
@@ -85,6 +113,7 @@ float varied_bayer_threshold(vec2 screen_pixel, float cell) {
 void vertex() {
 	face_palette_index = palette_index_override >= 0 ? float(palette_index_override) : floor(UV2.x + 0.5);
 	face_render_type = palette_index_override >= 0 ? -1.0 : UV2.y;
+	clamp_light_ramp = CUSTOM0.w < 0.0 ? 1.0 : 0.0;
 	texture_region = CUSTOM1;
 	float clip_w = (PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).w;
 	affine_uv_times_w = UV * clip_w;
@@ -129,8 +158,7 @@ void fragment() {
 			vec3 smooth_color = mix(texture_color, next_color, fraction);
 			if (dither_mode == 4) {
 				vec2 coord = anchored_dither_coord();
-				vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? next_color : texture_color;
-				texture_color = mix(smooth_color, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
+				texture_color = preview_dither_blend(texture_color, next_color, light_row, coord);
 			} else {
 				texture_color = smooth_color;
 			}
@@ -141,14 +169,13 @@ void fragment() {
 	if (dither_mode == 3 && length(pixel_normal) > 0.0) {
 		shade = preview_ambient_level + max(dot(normalize(pixel_normal), normalize(source_light_vector)), 0.0) * ((use_mesh_lighting ? mesh_light_span : length(source_light_vector)) - preview_ambient_level) * (use_mesh_lighting ? 1.0 : min(length(pixel_normal) / 16384.0, 1.0));
 	}
-	// LBA2's solid colors live in 16-entry ramps. Crossing a ramp boundary
-	// turns pale eye whites (218-223) into the near-black ramp at 224.
+	// The original solid/flat/Gouraud fillers add light directly to the
+	// palette index, including across a 16-colour ramp boundary. Types 6/7
+	// use the XPL Gouraud table instead (POLY_JMP.ASM).
 	float ramp_start = floor(base_index / 16.0) * 16.0;
-	// Some source colors are authored near the bright end of a ramp. Keeping
-	// only upward shade steps flattens their entire normal range at the cap.
-	float smooth_index = reverse_shade_strength > 0.0 && fract(base_index / 16.0) >= 0.75 && length(pixel_normal) > 0.0
-		? max(base_index - (15.0 - shade) * reverse_shade_strength, ramp_start)
-		: min(base_index + shade, ramp_start + 15.0);
+	int solid_kind = int(floor(face_render_type + 0.5));
+	bool source_direct_shade = clamp_light_ramp < 0.5 && (solid_kind == 1 || solid_kind == 4 || solid_kind == 5) && length(pixel_normal) > 0.0;
+	float smooth_index = source_direct_shade ? mod(base_index + shade, 256.0) : min(base_index + shade, ramp_start + 15.0);
 	float lower_index = floor(smooth_index);
 	float upper_index = mod(lower_index + 1.0, 256.0);
 	if (dither_mode == 3 || dither_mode == 4) {
@@ -158,8 +185,7 @@ void fragment() {
 		vec3 smooth_color = mix(lower_color, upper_color, fraction);
 		if (dither_mode == 4) {
 			vec2 coord = anchored_dither_coord();
-			vec3 stepped_color = fraction > anchored_dither_threshold(coord) ? upper_color : lower_color;
-			ALBEDO = mix(smooth_color, stepped_color, anchored_dither_weight(coord) * soft_dither_strength);
+			ALBEDO = preview_dither_blend(lower_color, upper_color, smooth_index, coord);
 		} else {
 			ALBEDO = smooth_color;
 		}

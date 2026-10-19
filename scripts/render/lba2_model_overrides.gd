@@ -29,6 +29,18 @@ static func apply_geometry(body: Dictionary) -> void:
 	# the repair in the data file makes preview and GLB export use one mesh.
 	var appearance: Dictionary = body.get("appearance", {})
 	var polygons: Array = body.get("polygons", [])
+	for rule in appearance.get("clamp_light_ramp_faces", []):
+		for polygon_index in range(polygons.size()):
+			var polygon: Dictionary = polygons[polygon_index]
+			if int(polygon["palette_index"]) == int(rule["palette_index"]) and int(polygon["render_type"]) == int(rule["render_type"]):
+				polygon["clamp_light_ramp"] = true
+				polygons[polygon_index] = polygon
+	for rule in appearance.get("polygon_surface_offsets", []):
+		if rule.size() != 2 or int(rule[0]) < 0 or int(rule[0]) >= polygons.size():
+			continue
+		var polygon: Dictionary = polygons[int(rule[0])]
+		polygon["auto_surface_offset"] = float(rule[1])
+		polygons[int(rule[0])] = polygon
 	for swap in appearance.get("uv_corner_swaps", []):
 		if swap.size() != 3:
 			continue
