@@ -295,9 +295,10 @@ func _init() -> void:
 	assert(fireball_state.get_materials().any(func(surface: Material) -> bool: return surface is BaseMaterial3D and surface.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED and surface.transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR))
 	assert(viewer.load_body(path, 90)["ok"])
 	assert(float(viewer.body["polygons"][3].get("auto_surface_offset", 0.0)) > 0.0, "BODY #90 mouth lost its depth clearance")
-	assert(viewer.load_body(path, 14)["ok"])
-	var lamp_faces: Array = viewer.body["polygons"].filter(func(face: Dictionary) -> bool: return face.get("clamp_light_ramp", false))
-	assert(lamp_faces.size() == 4 and lamp_faces.all(func(face: Dictionary) -> bool: return int(face["palette_index"]) == 221 and int(face["render_type"]) == 1), "BODY #14 must clamp only its four pale headlight faces")
+	for car_body_index in [14, 15, 22, 23, 219]:
+		assert(viewer.load_body(path, car_body_index)["ok"])
+		var lamp_faces: Array = viewer.body["polygons"].filter(func(face: Dictionary) -> bool: return face.get("clamp_light_ramp", false))
+		assert(lamp_faces.size() == 4 and lamp_faces.all(func(face: Dictionary) -> bool: return int(face["palette_index"]) == 221 and int(face["render_type"]) == 1), "BODY #%d must clamp only its four pale headlight faces" % car_body_index)
 	assert(viewer.load_body(path, 39)["ok"])
 	var body39_shirt_faces: Array = viewer.body["polygons"].filter(func(face: Dictionary) -> bool: return face.get("clamp_light_ramp", false))
 	assert(body39_shirt_faces.size() == 6 and body39_shirt_faces.all(func(face: Dictionary) -> bool: return int(face["palette_index"]) == 220 and int(face["render_type"]) == 1), "BODY #39 must clamp only its six pale shirt faces")
