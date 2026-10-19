@@ -13,6 +13,7 @@
     "321": {"switch_body_by_animation_groups": true},
     "322": {"switch_body_by_animation_groups": true},
     "329": {"group_translation_limits": {"25": 40}},
+    "330": {"group_translation_limits": {"25": 40}},
     "376": {"switch_body_by_animation_groups": true},
     "381": {"uv_min_density": 0.06},
     "388": {"arm_uv_min_density": 0.075},

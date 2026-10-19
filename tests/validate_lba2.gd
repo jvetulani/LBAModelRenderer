@@ -92,14 +92,41 @@ func _init() -> void:
 		assert(effect_body["ok"] and LBA2_APPEARANCE.has_translucent_faces(effect_body))
 		assert(effect_body["polygons"].any(func(polygon: Dictionary) -> bool: return LBA2_APPEARANCE.is_translucent_face(effect_body, polygon)))
 	assert(not LBA2_APPEARANCE.has_translucent_faces(decoded))
-	var chest_body: Dictionary = BODY_DECODER.decode(HQRReader.read_entry(path.path_join("BODY.HQR"), 329)["data"])
 	var chest_animation: Dictionary = LBA1AnimationDecoder.decode(HQRReader.read_entry(path.path_join("ANIM.HQR"), 1489)["data"])
-	assert(chest_body["ok"] and chest_animation["ok"])
-	var original_chest: Dictionary = LBA2_POSE.sample(chest_body, chest_animation, 4, 4, 0.0)
-	chest_body["appearance"] = LBA2_OVERRIDES.for_retail_body(329)
-	var repaired_chest: Dictionary = LBA2_POSE.sample(chest_body, chest_animation, 4, 4, 0.0)
-	assert(original_chest["points"][199].distance_to(repaired_chest["points"][199]) > 100.0)
-	assert(original_chest["points"][200].is_equal_approx(repaired_chest["points"][200]), "BODY #329 repair must only affect the stray point")
+	assert(chest_animation["ok"])
+	for chest_index in [329, 330]:
+		var chest_body: Dictionary = BODY_DECODER.decode(HQRReader.read_entry(path.path_join("BODY.HQR"), chest_index)["data"])
+		assert(chest_body["ok"] and chest_body["point_groups"][199] == 25)
+		var original_chest: Dictionary = LBA2_POSE.sample(chest_body, chest_animation, 5, 5, 1.0)
+		chest_body["appearance"] = LBA2_OVERRIDES.for_retail_body(chest_index)
+		var repaired_chest: Dictionary = LBA2_POSE.sample(chest_body, chest_animation, 5, 5, 1.0)
+		assert(original_chest["points"][199].distance_to(repaired_chest["points"][199]) > 100.0, "BODY #%d chest point remains stretched" % chest_index)
+		assert(original_chest["points"][200].is_equal_approx(repaired_chest["points"][200]), "BODY #%d repair changed the adjacent point" % chest_index)
+	assert(viewer.load_body(path, 330)["ok"])
+	var chest_part := LBA1GLBExporter._build_single_scene(viewer.export_input())
+	assert(chest_part["ok"])
+	var chest_library: AnimationLibrary = chest_part["player"].get_animation_library("")
+	var chest_clip: Animation
+	for clip_name in chest_library.get_animation_list():
+		if clip_name.ends_with("ANIM_1489"):
+			chest_clip = chest_library.get_animation(clip_name)
+			break
+	assert(chest_clip != null, "BODY #330 export lost ANIM #1489")
+	var chest_rest: Vector3 = chest_part["skeleton"].get_bone_rest(25).origin
+	var checked_chest_track := false
+	for track in range(chest_clip.get_track_count()):
+		if chest_clip.track_get_type(track) != Animation.TYPE_POSITION_3D or chest_clip.track_get_path(track) != NodePath("Skeleton3D:Group_25"):
+			continue
+		checked_chest_track = true
+		for key in range(chest_clip.track_get_key_count(track)):
+			var offset: Vector3 = chest_clip.track_get_key_value(track, key) - chest_rest
+			assert(offset.length() <= 40.01 * CharacterMeshBuilder.UNIT_SCALE, "BODY #330 GLB chest translation exceeds its preview limit")
+	assert(checked_chest_track)
+	chest_part["scene"].free()
+	var chest_glb := LBA1GLBExporter.build(viewer.export_input())
+	assert(chest_glb["ok"], "BODY #330 GLB export failed")
+	var chest_state := GLTFState.new()
+	assert(GLTFDocument.new().append_from_buffer(chest_glb["bytes"], "", chest_state) == OK, "BODY #330 GLB reimport failed")
 	var glass_loaded := viewer.load_body(path, 106)
 	assert(glass_loaded["ok"] and viewer.character.has_node("TranslucentPolygons"))
 	var glass_export := LBA1GLBExporter.build(viewer.export_input())

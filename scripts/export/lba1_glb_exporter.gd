@@ -240,14 +240,14 @@ static func _build_single_scene(input: Dictionary, body_index: int = -1) -> Dict
 		var all_frames := PackedInt32Array()
 		for frame_index in range(decoded["frame_count"]):
 			all_frames.append(frame_index)
-		library.add_animation(name, _make_animation(skeleton, decoded, all_frames, angle_scale, tick_rate))
+		library.add_animation(name, _make_animation(skeleton, decoded, all_frames, angle_scale, tick_rate, body))
 		exported_clips += 1
 		if decoded["loop_frame"] > 0 and decoded["loop_frame"] < decoded["frame_count"] and decoded["frame_count"] > 1:
 			var loop_frames := PackedInt32Array()
 			for frame_index in range(decoded["loop_frame"], decoded["frame_count"]):
 				loop_frames.append(frame_index)
 			loop_frames.append(decoded["loop_frame"])
-			library.add_animation(name + "_loop", _make_animation(skeleton, decoded, loop_frames, angle_scale, tick_rate))
+			library.add_animation(name + "_loop", _make_animation(skeleton, decoded, loop_frames, angle_scale, tick_rate, body))
 			exported_clips += 1
 	player.add_animation_library("", library)
 	return {"ok": true, "scene": scene, "skeleton": skeleton, "player": player, "body_index": body_index, "animations": exported_clips, "source_actions": clips.size(), "vertices": collector.vertices.size() + texture_vertex_count}
@@ -417,7 +417,7 @@ static func _add_shadow(scene: Node3D, sprite: Dictionary, palette: PackedByteAr
 	node.owner = scene
 
 
-static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_indices: PackedInt32Array, angle_scale: float, tick_rate: float) -> Animation:
+static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_indices: PackedInt32Array, angle_scale: float, tick_rate: float, body: Dictionary) -> Animation:
 	var animation := Animation.new()
 	var times := PackedFloat32Array()
 	var time := 0.0
@@ -449,7 +449,7 @@ static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_ind
 				var basis := Basis(Vector3.RIGHT, float(values.x) * angle_scale) * Basis(Vector3.BACK, float(values.z) * angle_scale) * Basis(Vector3.UP, float(values.y) * angle_scale)
 				rotation = basis.get_rotation_quaternion()
 			elif transform_data["type"] == 1:
-				bone_position += Vector3(transform_data["values"]) * SCALE
+				bone_position += CharacterPose.limit_child_translation(body, group_index, Vector3(transform_data["values"])) * SCALE
 			animation.rotation_track_insert_key(rotation_track, times[position], rotation)
 			animation.position_track_insert_key(position_track, times[position], bone_position)
 	return animation
