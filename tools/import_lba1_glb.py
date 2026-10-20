@@ -5,8 +5,10 @@ Run with: blender -b --factory-startup --python tools/import_lba1_glb.py -- inpu
 
 import sys
 import json
+import math
 import struct
 import tempfile
+import zlib
 from pathlib import Path
 
 import bpy
@@ -14,9 +16,12 @@ from mathutils import Vector
 
 
 def input_paths():
-    if "--" not in sys.argv or len(sys.argv[sys.argv.index("--") + 1 :]) != 2:
-        raise SystemExit("Usage: blender -b --python tools/import_lba1_glb.py -- INPUT.glb OUTPUT.blend")
-    return sys.argv[sys.argv.index("--") + 1 :]
+    if "--" not in sys.argv:
+        raise SystemExit("Usage: blender -b --python tools/import_lba1_glb.py -- INPUT.glb OUTPUT.blend [--no-platform]")
+    arguments = sys.argv[sys.argv.index("--") + 1 :]
+    if len(arguments) not in (2, 3) or (len(arguments) == 3 and arguments[2] != "--no-platform"):
+        raise SystemExit("Usage: blender -b --python tools/import_lba1_glb.py -- INPUT.glb OUTPUT.blend [--no-platform]")
+    return arguments[0], arguments[1], "--no-platform" not in arguments
 
 
 def repair_embedded_glb_images(source_path):
@@ -85,9 +90,96 @@ def render_dimension(nodes, scene, axis):
     return socket
 
 
-def reconstruct_palette_material(mesh_obj, palette_image):
+def camera_ortho_scale(nodes, scene):
+    value = nodes.new("ShaderNodeValue")
+    value.label = "Live orthographic camera height"
+    socket = value.outputs[0]
+    driver = socket.driver_add("default_value").driver
+    driver.expression = "scale"
+    scale = driver.variables.new()
+    scale.name = "scale"
+    scale.type = "SINGLE_PROP"
+    scale.targets[0].id_type = "SCENE"
+    scale.targets[0].id = scene
+    scale.targets[0].data_path = "camera.data.ortho_scale"
+    return socket
+
+
+def smoothstep(nodes, value, low, high, label):
+    unit = math_node(nodes, "DIVIDE", math_node(nodes, "SUBTRACT", value, low, label), high - low, label)
+    unit = math_node(nodes, "MINIMUM", math_node(nodes, "MAXIMUM", unit, 0.0, label), 1.0, label)
+    return math_node(nodes, "MULTIPLY", math_node(nodes, "MULTIPLY", unit, unit, label),
+                     math_node(nodes, "SUBTRACT", 3.0, math_node(nodes, "MULTIPLY", unit, 2.0, label), label), label)
+
+
+def shader_hash(x, y):
+    return (math.sin(x * 127.1 + y * 311.7) * 43758.5453) % 1.0
+
+
+def soft_dither_image():
+    """The viewer's rotated 8x8 model-space threshold, packed as an indexed PNG."""
+    existing = bpy.data.images.get("LBA_Soft_Dither_1024")
+    if existing:
+        return existing
+    size = 1024
+    rows = bytearray()
+    # PNG rows run top-down; the UV image origin is at the bottom left.
+    for y in range(size - 1, -1, -1):
+        cell_y = y - size // 2
+        rows.append(0)
+        for x in range(size):
+            cell_x = x - size // 2
+            tile_x, tile_y = cell_x // 8, cell_y // 8
+            local_x, local_y = cell_x % 8, cell_y % 8
+            turn = int(shader_hash(tile_x + 19, tile_y + 7) * 4)
+            if turn == 1:
+                local_x, local_y = 7 - local_y, local_x
+            elif turn == 2:
+                local_x, local_y = 7 - local_x, 7 - local_y
+            elif turn == 3:
+                local_x, local_y = local_y, 7 - local_x
+            rows.append(round(shader_hash(local_x + tile_x * 37, local_y + tile_y * 53) * 255))
+    def chunk(kind, payload):
+        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload))
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 0, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(rows, 6)) + chunk(b"IEND", b""))
+    with tempfile.TemporaryDirectory(prefix="lba-soft-dither-") as folder:
+        path = Path(folder) / "lba-soft-dither.png"
+        path.write_bytes(png)
+        image = bpy.data.images.load(str(path), check_existing=False)
+        image.name = "LBA_Soft_Dither_1024"
+        image.pack(data=png, data_len=len(png))
+    image.colorspace_settings.name = "Non-Color"
+    return image
+
+
+def mix_color(nodes, factor, first, second, label):
+    node = nodes.new("ShaderNodeMix")
+    node.data_type = "RGBA"
+    node.label = label
+    links.new(factor, node.inputs[0])
+    links.new(first, node.inputs[6])
+    links.new(second, node.inputs[7])
+    return node.outputs[2]
+
+
+def palette_sample(nodes, palette_image, index, label):
+    coordinate = math_node(nodes, "DIVIDE", math_node(nodes, "ADD", index, 0.5, label), 256.0, label)
+    uv = nodes.new("ShaderNodeCombineXYZ")
+    links.new(coordinate, uv.inputs["X"])
+    uv.inputs["Y"].default_value = 0.5
+    image = nodes.new("ShaderNodeTexImage")
+    image.label = label
+    image.image = palette_image
+    image.interpolation = "Closest"
+    image.extension = "CLIP"
+    links.new(uv.outputs[0], image.inputs["Vector"])
+    return image.outputs["Color"]
+
+
+def reconstruct_palette_material(mesh_obj, palette_image, is_lba2):
     global links
-    material = bpy.data.materials.new("LBA1 Palette · Eevee pixel dither")
+    material = bpy.data.materials.new("LBA Palette · Eevee soft model dither")
     material.use_nodes = True
     nodes = material.node_tree.nodes
     nodes.clear()
@@ -97,70 +189,69 @@ def reconstruct_palette_material(mesh_obj, palette_image):
     uv.uv_map = mesh_obj.data.uv_layers[0].name
     uv_split = nodes.new("ShaderNodeSeparateXYZ")
     links.new(uv.outputs["UV"], uv_split.inputs[0])
+    # Blender flips glTF V on import. UV.y holds source face metadata, so
+    # restore its original direction before decoding the packed values.
+    source_v = math_node(nodes, "SUBTRACT", 1.0, uv_split.outputs["Y"], "Restore GLB face metadata V")
     palette_value = math_node(nodes, "SUBTRACT", math_node(nodes, "MULTIPLY", uv_split.outputs["X"], 256.0, "Palette coordinate"), 0.5, "Palette index")
     base = math_node(nodes, "FLOOR", palette_value, 0.0, "Lower palette index")
     fraction = math_node(nodes, "FRACT", palette_value, 0.0, "Fractional shade")
 
-    # LBA1 distributes fractional palette steps in screen space. Eevee cannot
-    # reproduce the original scanline prefix sum, so this 4x4 ordered threshold
-    # is a resolution-independent approximation, packed inside the .blend.
-    thresholds = [
-        [0, 8, 2, 10],
-        [12, 4, 14, 6],
-        [3, 11, 1, 9],
-        [15, 7, 13, 5],
-    ]
-    image = bpy.data.images.new("LBA1_Dither_4x4", width=4, height=4, alpha=False, float_buffer=False)
-    pixels = []
-    for row in reversed(thresholds):
-        for value in row:
-            gray = (value + 0.5) / 16.0
-            pixels.extend((gray, gray, gray, 1.0))
-    image.pixels[:] = pixels
-    image.pack()
-    image.colorspace_settings.name = "Non-Color"
+    lower_color = palette_sample(nodes, palette_image, base, "Lower palette colour")
+    upper_index = math_node(nodes, "MODULO", math_node(nodes, "ADD", base, 1.0, "Next palette index"), 256.0, "Wrap palette")
+    upper_color = palette_sample(nodes, palette_image, upper_index, "Upper palette colour")
+    smooth_color = mix_color(nodes, fraction, lower_color, upper_color, "Smooth palette blend")
 
-    screen = nodes.new("ShaderNodeTexCoord")
-    screen_split = nodes.new("ShaderNodeSeparateXYZ")
-    links.new(screen.outputs["Window"], screen_split.inputs[0])
-    width = render_dimension(nodes, bpy.context.scene, "X")
-    height = render_dimension(nodes, bpy.context.scene, "Y")
-    cell_x = math_node(nodes, "DIVIDE", math_node(nodes, "MULTIPLY", screen_split.outputs["X"], width, "Screen X pixels"), 4.0, "Pattern X")
-    cell_y = math_node(nodes, "DIVIDE", math_node(nodes, "MULTIPLY", screen_split.outputs["Y"], height, "Screen Y pixels"), 4.0, "Pattern Y")
-    combine = nodes.new("ShaderNodeCombineXYZ")
-    links.new(cell_x, combine.inputs["X"])
-    links.new(cell_y, combine.inputs["Y"])
-    dither = nodes.new("ShaderNodeTexImage")
-    dither.image = image
-    dither.interpolation = "Closest"
-    dither.extension = "REPEAT"
-    links.new(combine.outputs[0], dither.inputs["Vector"])
-    dither_split = nodes.new("ShaderNodeSeparateXYZ")
-    links.new(dither.outputs["Color"], dither_split.inputs[0])
-    increment = math_node(nodes, "GREATER_THAN", fraction, dither_split.outputs["X"], "Dither next index")
-    dithered = math_node(nodes, "ADD", base, increment, "Dithered palette index")
+    if len(mesh_obj.data.uv_layers) > 1:
+        anchor = nodes.new("ShaderNodeUVMap")
+        anchor.uv_map = mesh_obj.data.uv_layers[1].name
+        anchor.label = "Rest-pose model coordinates (GLB UV2)"
+        anchor_split = nodes.new("ShaderNodeSeparateXYZ")
+        links.new(anchor.outputs["UV"], anchor_split.inputs[0])
+        anchor_vector = nodes.new("ShaderNodeCombineXYZ")
+        links.new(anchor_split.outputs["X"], anchor_vector.inputs["X"])
+        links.new(math_node(nodes, "SUBTRACT", 1.0, anchor_split.outputs["Y"], "Restore GLB dither V"), anchor_vector.inputs["Y"])
+        dither = nodes.new("ShaderNodeTexImage")
+        dither.image = soft_dither_image()
+        dither.interpolation = "Closest"
+        dither.extension = "REPEAT"
+        dither.label = "Viewer rotated 8x8 threshold"
+        links.new(anchor_vector.outputs[0], dither.inputs["Vector"])
+        threshold = nodes.new("ShaderNodeSeparateXYZ")
+        links.new(dither.outputs["Color"], threshold.inputs[0])
+        increment = math_node(nodes, "GREATER_THAN", fraction, threshold.outputs["X"], "Choose next palette colour")
+        stepped_color = mix_color(nodes, increment, lower_color, upper_color, "Model-anchored palette step")
 
-    # UV.y carries the original polygon render type. Spheres and line pieces
-    # carry zero; Gouraud and source dithered polygons carry nine or more.
-    face_type = math_node(nodes, "MULTIPLY", uv_split.outputs["Y"], 16.0, "LBA polygon type")
-    use_dither = math_node(nodes, "GREATER_THAN", face_type, 8.99, "Dither shaded polygons")
-    ordinary = math_node(nodes, "FLOOR", math_node(nodes, "ADD", palette_value, 0.5, "Nearest index"), 0.0, "Solid palette index")
-    chosen = nodes.new("ShaderNodeMix")
-    chosen.data_type = "FLOAT"
-    links.new(use_dither, chosen.inputs[0])
-    links.new(ordinary, chosen.inputs[2])
-    links.new(dithered, chosen.inputs[3])
-    lookup = math_node(nodes, "DIVIDE", math_node(nodes, "ADD", chosen.outputs[0], 0.5, "Palette texel center"), 256.0, "Palette U")
-    palette_uv = nodes.new("ShaderNodeCombineXYZ")
-    links.new(lookup, palette_uv.inputs["X"])
-    palette_uv.inputs["Y"].default_value = 0.5
-    palette = nodes.new("ShaderNodeTexImage")
-    palette.image = palette_image
-    palette.interpolation = "Closest"
-    palette.extension = "CLIP"
-    links.new(palette_uv.outputs[0], palette.inputs["Vector"])
+        encoded_type = math_node(nodes, "MULTIPLY", source_v, 16.0, "Face type and shade slope")
+        gradient = math_node(nodes, "MULTIPLY", math_node(nodes, "MAXIMUM", math_node(nodes, "SUBTRACT", math_node(nodes, "FRACT", encoded_type, 0.0, "Packed slope"), 0.125, "Slope origin"), 0.0, "Positive slope"), 64.0, "Shade change per model unit")
+        height = render_dimension(nodes, bpy.context.scene, "Y")
+        camera_height = camera_ortho_scale(nodes, bpy.context.scene)
+        units_per_pixel = math_node(nodes, "DIVIDE", camera_height, height, "Model units per render pixel")
+        footprint = math_node(nodes, "MULTIPLY", units_per_pixel, 256.0, "Pattern cells per pixel")
+        footprint_weight = math_node(nodes, "SUBTRACT", 1.0, smoothstep(nodes, footprint, 0.75, 1.5, "Pattern resolution fade"), "Visible pattern")
+        distance = nodes.new("ShaderNodeVectorMath")
+        distance.operation = "DISTANCE"
+        distance.label = "Palette colour gap"
+        links.new(lower_color, distance.inputs[0])
+        links.new(upper_color, distance.inputs[1])
+        visible_change = math_node(nodes, "MULTIPLY", math_node(nodes, "MULTIPLY", distance.outputs["Value"], gradient, "Colour and shade slope"), math_node(nodes, "MULTIPLY", units_per_pixel, 64.0, "Viewer transition scale"), "Visible palette transition")
+        transition = smoothstep(nodes, visible_change, 0.08, 0.22, "Only dither palette transitions")
+        coverage = math_node(nodes, "MULTIPLY", math_node(nodes, "MULTIPLY", transition, footprint_weight, "Transition and distance"), 0.56, "Viewer soft dither strength")
+        soft_color = mix_color(nodes, coverage, smooth_color, stepped_color, "Subtle soft dither")
+    else:
+        # Older GLBs have no model anchor or slope; their palette stays smooth.
+        soft_color = smooth_color
+
+    if is_lba2:
+        final_color = soft_color
+    else:
+        # LBA1's soft path is confined to source shaded faces (type >= 7).
+        face_type = math_node(nodes, "FLOOR", math_node(nodes, "MULTIPLY", source_v, 16.0, "Source face type"), 0.0, "Whole face type")
+        use_soft = math_node(nodes, "GREATER_THAN", face_type, 6.5, "LBA1 shaded face")
+        ordinary = math_node(nodes, "FLOOR", math_node(nodes, "ADD", palette_value, 0.5, "Nearest index"), 0.0, "Solid palette index")
+        ordinary_color = palette_sample(nodes, palette_image, ordinary, "LBA1 solid colour")
+        final_color = mix_color(nodes, use_soft, ordinary_color, soft_color, "Source face mode")
     emission = nodes.new("ShaderNodeEmission")
-    links.new(palette.outputs["Color"], emission.inputs["Color"])
+    links.new(final_color, emission.inputs["Color"])
     output = nodes.new("ShaderNodeOutputMaterial")
     links.new(emission.outputs[0], output.inputs["Surface"])
     # The first GLB surface is palette shaded. Keep later LBA2 texture surfaces.
@@ -221,7 +312,7 @@ def make_all_actions_cyclic():
 
 
 def main():
-    source_path, blend_path = input_paths()
+    source_path, blend_path, include_platform = input_paths()
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     bpy.ops.import_scene.gltf(filepath=source_path,bone_heuristic='FORTUNE')
@@ -240,6 +331,7 @@ def main():
     images = [image for image in bpy.data.images if image.size[:] == (256, 1)]
     if not images:
         raise RuntimeError("GLB has no embedded 256-color palette")
+    is_lba2 = any(obj.name.startswith("LBA2_Character") for obj in bpy.data.objects)
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
     scene.render.resolution_x = 1920
@@ -256,7 +348,7 @@ def main():
             ),
             images[0],
         )
-        reconstruct_palette_material(character, palette_image)
+        reconstruct_palette_material(character, palette_image, is_lba2)
         for texture_material in character.data.materials[1:]:
             if texture_material and texture_material.use_nodes:
                 for node in texture_material.node_tree.nodes:
@@ -266,11 +358,12 @@ def main():
                         if not node.image.packed_file:
                             node.image.pack()
 
-    bpy.ops.object.select_all(action="DESELECT")
-    bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=0.75, depth=0.10, location=(0, 0, -0.055))
-    platform = bpy.context.object
-    platform.name = "DisplayPlatform"
-    platform.data.materials.append(reconstruct_platform_material())
+    if include_platform:
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=0.75, depth=0.10, location=(0, 0, -0.055))
+        platform = bpy.context.object
+        platform.name = "DisplayPlatform"
+        platform.data.materials.append(reconstruct_platform_material())
 
     camera_data = bpy.data.cameras.new("Orbit preview camera")
     camera = bpy.data.objects.new("Orbit preview camera", camera_data)

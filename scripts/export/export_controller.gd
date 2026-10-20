@@ -3,6 +3,7 @@ extends Node
 
 @onready var viewer: CharacterViewer = $"../CharacterViewer"
 @onready var ui: MainUI = $"../MainUI"
+@onready var display_platform: DisplayPlatform = $"../DisplayBlock"
 
 
 func _ready() -> void:
@@ -24,13 +25,13 @@ func _export(format: String, destination: String) -> void:
 		JavaScriptBridge.download_buffer(result["bytes"], filename, "model/gltf-binary")
 		ui.set_status("Downloaded %s with %d source actions." % [filename, result["source_actions"]])
 	elif format == "blend":
-		_save_blender(result["bytes"], destination, result["source_actions"], input["game"])
+		_save_blender(result["bytes"], destination, result["source_actions"], input["game"], display_platform.visible)
 	else:
 		var error := _write_bytes(destination, result["bytes"])
 		ui.set_status("Saved %s with %d source actions." % [destination, result["source_actions"]] if error.is_empty() else error)
 
 
-func _save_blender(bytes: PackedByteArray, destination: String, action_count: int, game: String) -> void:
+func _save_blender(bytes: PackedByteArray, destination: String, action_count: int, game: String, include_platform: bool) -> void:
 	var source_script := FileAccess.open("res://tools/import_lba1_glb.py", FileAccess.READ)
 	if source_script == null:
 		ui.set_status("Blender conversion script is missing from the project")
@@ -47,7 +48,10 @@ func _save_blender(bytes: PackedByteArray, destination: String, action_count: in
 	if blender.is_empty():
 		blender = "blender"
 	var output := []
-	var exit_code := OS.execute(blender, PackedStringArray(["-b", "-noaudio", "--factory-startup", "--python", script_path, "--", glb_path, destination]), output, true)
+	var arguments := PackedStringArray(["-b", "-noaudio", "--factory-startup", "--python", script_path, "--", glb_path, destination])
+	if not include_platform:
+		arguments.append("--no-platform")
+	var exit_code := OS.execute(blender, arguments, output, true)
 	var log := str(output[0]) if not output.is_empty() else ""
 	if exit_code != 0 or not log.contains("SAVED %s:" % destination) or not FileAccess.file_exists(destination):
 		ui.set_status("Blender export failed. Install Blender or set LBA_BLENDER. %s" % log.right(160))

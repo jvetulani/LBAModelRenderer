@@ -56,6 +56,14 @@ func _run() -> void:
 	if not FileAccess.file_exists("/tmp/lba1-ui-grobo.blend") or not ui.status_label.text.begins_with("Saved /tmp/lba1-ui-grobo.blend"):
 		_fail("UI controller did not save Blender file: %s" % ui.status_label.text)
 		return
+	ui.platform_visible_changed.emit(false)
+	if platform.visible:
+		_fail("Platform toggle did not hide the display platform")
+		return
+	exporter._export("blend", "/tmp/lba1-ui-grobo-no-platform.blend")
+	if not FileAccess.file_exists("/tmp/lba1-ui-grobo-no-platform.blend") or not ui.status_label.text.begins_with("Saved /tmp/lba1-ui-grobo-no-platform.blend"):
+		_fail("UI controller did not save platform-free Blender file: %s" % ui.status_label.text)
+		return
 	print("PASS: UI exported GLB and Blender file; %s" % ui.status_label.text)
 	quit(0)
 

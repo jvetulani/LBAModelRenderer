@@ -13,13 +13,18 @@ class MeshCollector:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var dither_uvs := PackedVector2Array()
 	var bones := PackedInt32Array()
 	var weights := PackedFloat32Array()
 
-	func add(point: Vector3, normal: Vector3, palette_index: float, group_index: int, render_type: int = 0) -> void:
+	func add(point: Vector3, normal: Vector3, palette_index: float, group_index: int, render_type: int = 0, dither_anchor: Vector2 = Vector2.ZERO, shade_gradient: float = 0.0) -> void:
 		vertices.append(point)
 		normals.append(normal)
-		uvs.append(Vector2((fposmod(palette_index, 256.0) + 0.5) / 256.0, (float(render_type) + 0.5) / 16.0))
+		# The palette image is one pixel tall. Its unused V coordinate carries
+		# face type plus a bounded shade slope for Blender's soft-dither mask.
+		uvs.append(Vector2((fposmod(palette_index, 256.0) + 0.5) / 256.0, (float(render_type) + 0.125 + clampf(shade_gradient / 64.0, 0.0, 0.75)) / 16.0))
+		# The packed Blender threshold page covers signed source cells -512..511.
+		dither_uvs.append((dither_anchor + Vector2(512.0, 512.0)) / 1024.0)
 		bones.append_array(PackedInt32Array([group_index, 0, 0, 0]))
 		weights.append_array(PackedFloat32Array([1.0, 0.0, 0.0, 0.0]))
 
@@ -27,6 +32,7 @@ class MeshCollector:
 		vertices.append(point)
 		normals.append(normal)
 		uvs.append(uv)
+		dither_uvs.append(Vector2.ZERO)
 		bones.append_array(PackedInt32Array([group_index, 0, 0, 0]))
 		weights.append_array(PackedFloat32Array([1.0, 0.0, 0.0, 0.0]))
 
@@ -36,6 +42,7 @@ class MeshCollector:
 		arrays[Mesh.ARRAY_VERTEX] = vertices
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		arrays[Mesh.ARRAY_TEX_UV2] = dither_uvs
 		arrays[Mesh.ARRAY_BONES] = bones
 		arrays[Mesh.ARRAY_WEIGHTS] = weights
 		return arrays
@@ -392,24 +399,21 @@ static func _add_polygons(collector: MeshCollector, textured: Dictionary, body: 
 		var face_normal := (points[indices[1]] - points[indices[0]]).cross(points[indices[2]] - points[indices[0]]).normalized()
 		var surface_offset := LBA2_APPEARANCE.surface_offset_for_face(body, polygon)
 		for triangle_index in range(1, indices.size() - 1):
-			for corner in [0, triangle_index + 1, triangle_index]:
+			var corners := PackedInt32Array([0, triangle_index + 1, triangle_index])
+			var shades := PackedFloat32Array()
+			for corner in corners:
+				shades.append(_export_palette_index(body, polygon, normals[corner], is_lba2))
+			var shade_gradient := _triangle_shade_gradient(points[indices[corners[0]]], points[indices[corners[1]]], points[indices[corners[2]]], shades)
+			for corner_slot in range(3):
+				var corner := corners[corner_slot]
 				var point_index: int = indices[corner]
 				var normal := face_normal
-				var color_index: float = float(polygon["palette_index"])
+				var color_index: float = shades[corner_slot]
 				var normal_index: int = normals[corner]
 				if normal_index >= 0:
 						var source_normal: Vector3 = body["normals"][normal_index]
 						if source_normal.length_squared() > 0.0:
 							normal = source_normal.normalized()
-						if is_lba2:
-							color_index += 2.0 + maxf(normal.dot(LIGHT_VECTOR.normalized()), 0.0) * 8.0 * minf(source_normal.length() / 16384.0, 1.0)
-						else:
-							var divisor := maxf(1.0, float(body["normal_divisors"][normal_index]))
-							color_index += maxf(source_normal.dot(LIGHT_VECTOR), 0.0) / divisor
-				if is_lba2:
-					var base_index: int = polygon["palette_index"]
-					if polygon.get("clamp_light_ramp", false) or int(polygon["render_type"]) not in [1, 4, 5]:
-						color_index = minf(color_index, float(base_index / 16 * 16 + 15))
 				if polygon.get("texture_handle", -1) >= 0:
 					var raw_uv: Vector2 = polygon["texture_uvs"][corner]
 					var mask: Vector2 = polygon["texture_mask"]
@@ -449,7 +453,42 @@ static func _add_polygons(collector: MeshCollector, textured: Dictionary, body: 
 					tele_collector.add_uv(point * SCALE + offset, normal, Vector2(point.x, point.y) / 128.0, point_groups[point_index])
 				else:
 					var target := glass_collector if LBA2_APPEARANCE.is_translucent_face(body, polygon) or LBA1_FACE_MODES.is_transparent(body, polygon) else collector
-					target.add(points[point_index] * SCALE + offset + face_normal * surface_offset, normal, color_index, point_groups[point_index], polygon["render_type"])
+					var rest := points[point_index] * SCALE
+					var axis := face_normal.abs()
+					var anchor := Vector2(rest.y, rest.z) if axis.x > axis.y and axis.x > axis.z else (Vector2(rest.x, rest.z) if axis.y > axis.z else Vector2(rest.x, rest.y))
+					target.add(rest + offset + face_normal * surface_offset, normal, color_index, point_groups[point_index], polygon["render_type"], anchor * 256.0, shade_gradient)
+
+
+static func _export_palette_index(body: Dictionary, polygon: Dictionary, normal_index: int, is_lba2: bool) -> float:
+	var color_index: float = float(polygon["palette_index"])
+	if normal_index >= 0:
+		var source_normal: Vector3 = body["normals"][normal_index]
+		if is_lba2:
+			var normal: Vector3 = source_normal.normalized() if source_normal.length_squared() > 0.0 else Vector3.ZERO
+			color_index += 2.0 + maxf(normal.dot(LIGHT_VECTOR.normalized()), 0.0) * 8.0 * minf(source_normal.length() / 16384.0, 1.0)
+		else:
+			var divisor := maxf(1.0, float(body["normal_divisors"][normal_index]))
+			color_index += maxf(source_normal.dot(LIGHT_VECTOR), 0.0) / divisor
+	if is_lba2:
+		var base_index: int = polygon["palette_index"]
+		if polygon.get("clamp_light_ramp", false) or int(polygon["render_type"]) not in [1, 4, 5]:
+			color_index = minf(color_index, float(base_index / 16 * 16 + 15))
+	return color_index
+
+
+static func _triangle_shade_gradient(a: Vector3, b: Vector3, c: Vector3, shades: PackedFloat32Array) -> float:
+	var edge_a := (b - a) * SCALE
+	var edge_b := (c - a) * SCALE
+	var aa := edge_a.dot(edge_a)
+	var ab := edge_a.dot(edge_b)
+	var bb := edge_b.dot(edge_b)
+	var determinant := aa * bb - ab * ab
+	if determinant < 0.0000000001:
+		return 0.0
+	var delta_a := shades[1] - shades[0]
+	var delta_b := shades[2] - shades[0]
+	var gradient := edge_a * ((delta_a * bb - delta_b * ab) / determinant) + edge_b * ((delta_b * aa - delta_a * ab) / determinant)
+	return gradient.length()
 
 
 static func _add_spheres(collector: MeshCollector, body: Dictionary, offset: Vector3) -> void:
