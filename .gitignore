@@ -30,3 +30,5 @@ builds/windows-x86_64/*
 !builds/web/.gitkeep
 !builds/linux-x86_64/.gitkeep
 !builds/windows-x86_64/.gitkeep
+.exports/
+.exports/
