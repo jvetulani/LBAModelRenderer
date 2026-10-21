@@ -4,7 +4,7 @@ The viewer exports the loaded **LBA1, LBA2, or 1996 LBA2 demo** body and its ass
 
 ## In the viewer
 
-On desktop, choose **Export GLB** or **Export Blender** after loading a character. The Blender button runs an installed `blender` executable; set `LBA_BLENDER` to a different executable path if needed. On the web, choose an LBA1 or LBA2 game folder containing BODY.HQR, ANIM.HQR and RESS.HQR; FILE3D.HQR is also needed for LBA1 and the 1996 LBA2 demo. Then use **Export GLB**. The archives stay in browser memory and are not sent to the host. The hosted viewer is at https://jvetulani.github.io/LBAModelRenderer/.
+On desktop, choose **Export GLB** or **Export Blender** after loading a character. The Blender button runs an installed `blender` executable; set `LBA_BLENDER` to a different executable path if needed. On the web, choose an LBA1 or LBA2 game folder containing BODY.HQR, ANIM.HQR and RESS.HQR; FILE3D.HQR is also needed for LBA1 and the 1996 LBA2 demo. An AITD folder needs LISTBODY.PAK, LISTANIM.PAK and either ITD_RESS.PAK or CAMERA00.PAK for its palette. Then use **Export GLB**. The archives stay in browser memory and are not sent to the host. The hosted viewer is at https://jvetulani.github.io/LBAModelRenderer/.
 
 The LBA2 fire and plasma textures animate in the preview. GLB and Blender exports currently contain the visible texture frame at export time; the texture does not animate after export.
 

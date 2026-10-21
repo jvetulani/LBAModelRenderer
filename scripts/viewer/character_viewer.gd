@@ -66,18 +66,29 @@ func _load_aitd_body(source: String, entry_index: int, kind: String) -> Dictiona
 		return located
 	var game_directory: String = located["directory"]
 	_aitd_directory = game_directory
-	var body_entry: Dictionary = AITD_PAK.read_entry(game_directory.path_join("LISTBODY.PAK"), entry_index)
+	game = located["game"]
+	return _load_aitd_asset(entry_index, kind)
+
+
+func _read_aitd_entry(name: String, index: int) -> Dictionary:
+	if _archives.has(name):
+		return AITD_PAK.read_entry_bytes(_archives[name], index)
+	return AITD_PAK.read_entry(_aitd_directory.path_join(name), index)
+
+
+func _load_aitd_asset(entry_index: int, kind: String) -> Dictionary:
+	var body_entry: Dictionary = _read_aitd_entry("LISTBODY.PAK", entry_index)
 	if not body_entry["ok"]:
 		return body_entry
-	var decoded: Dictionary = AITD_BODY.decode(body_entry["data"], located["game"])
+	var decoded: Dictionary = AITD_BODY.decode(body_entry["data"], game)
 	if not decoded["ok"]:
 		return decoded
-	var palette_entry: Dictionary = AITD_PAK.read_entry(game_directory.path_join("ITD_RESS.PAK"), 3)
+	var palette_entry: Dictionary = _read_aitd_entry("ITD_RESS.PAK", 3)
 	var palette := PackedByteArray()
 	if palette_entry["ok"] and palette_entry["data"].size() == 768:
 		palette = palette_entry["data"]
 	else:
-		var camera_entry: Dictionary = AITD_PAK.read_entry(game_directory.path_join("CAMERA00.PAK"), 0)
+		var camera_entry: Dictionary = _read_aitd_entry("CAMERA00.PAK", 0)
 		if camera_entry["ok"] and camera_entry["data"].size() >= 64768:
 			palette = camera_entry["data"].slice(64000, 64768)
 	if palette.size() != 768:
@@ -94,7 +105,6 @@ func _load_aitd_body(source: String, entry_index: int, kind: String) -> Dictiona
 	_motion_grid.position = stand_position - Vector3.UP * 0.01
 	_motion_grid.visible = false
 	_palette = palette
-	game = located["game"]
 	asset_kind = kind if kind.begins_with("aitd") else "body"
 	_body_index = entry_index
 	_display_body_index = entry_index
@@ -124,13 +134,16 @@ func _find_aitd_animations() -> Array:
 	if body["groups"].is_empty():
 		return []
 	var found := []
-	var scene_clips := AITD_PAK.scene_animation_ids(_aitd_directory, _body_index)
-	var confirmed_clips := AITD_PAK.confirmed_animation_ids(game, _body_index)
-	for record in AITD_PAK.animation_catalog(_aitd_directory.path_join("LISTANIM.PAK")):
+	var scene_clips := AITD_PAK.scene_animation_ids_bytes(_archives["OBJETS.ITD"], _body_index) if _archives.has("OBJETS.ITD") else AITD_PAK.scene_animation_ids(_aitd_directory, _body_index)
+	var linked_clips: Array = AITD_PAK.life_animation_ids_bytes(_archives, _body_index) if _archives.has("LISTLIFE.PAK") else AITD_PAK.life_animation_map(_aitd_directory).get(str(_body_index), [])
+	var catalog: Array = AITD_PAK.animation_catalog_bytes(_archives["LISTANIM.PAK"]) if _archives.has("LISTANIM.PAK") else AITD_PAK.animation_catalog(_aitd_directory.path_join("LISTANIM.PAK"))
+	for record in catalog:
 		var archive_index := int(record[0])
-		var associated: bool = scene_clips.has(archive_index) or confirmed_clips.has(archive_index)
-		if associated or int(record[2]) == body["groups"].size():
-			found.append({"archive_index": archive_index, "name": "Rocking" if confirmed_clips.has(archive_index) else ("Scene clip" if associated else "Compatible clip"), "associated": associated})
+		if int(record[2]) != body["groups"].size():
+			continue
+		var associated: bool = linked_clips.has(archive_index) or scene_clips.has(archive_index)
+		var label := "Game clip" if linked_clips.has(archive_index) else ("Scene clip" if scene_clips.has(archive_index) else "Compatible clip")
+		found.append({"archive_index": archive_index, "name": label, "associated": associated})
 	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return a["associated"] and not b["associated"] if a["associated"] != b["associated"] else a["archive_index"] < b["archive_index"]
 	)
@@ -141,6 +154,12 @@ func load_archives(archives: Dictionary, body_index: int, kind: String = "body")
 	_directory = ""
 	_archives = archives
 	asset_kind = kind
+	if _archives.has("LISTBODY.PAK"):
+		if not _archives.has("LISTANIM.PAK"):
+			return {"ok": false, "error": "Missing LISTANIM.PAK"}
+		_aitd_directory = ""
+		game = str(_archives.get("_aitd_game", "AITD1"))
+		return _load_aitd_asset(body_index, kind)
 	for archive_name in ["BODY.HQR", "ANIM.HQR", "RESS.HQR"]:
 		if not _archives.has(archive_name):
 			return {"ok": false, "error": "Missing %s" % archive_name}
@@ -517,7 +536,7 @@ func select_animation(archive_index: int) -> Dictionary:
 			if entry["archive_index"] == archive_index:
 				target_body = entry.get("body_index", _body_index)
 				break
-	var resource := AITD_PAK.read_entry(_aitd_directory.path_join("LISTANIM.PAK"), archive_index) if game.begins_with("AITD") else _read_entry("ANIM.HQR", archive_index)
+	var resource := _read_aitd_entry("LISTANIM.PAK", archive_index) if game.begins_with("AITD") else _read_entry("ANIM.HQR", archive_index)
 	if not resource["ok"]:
 		return resource
 	var decoded := _decode_animation(archive_index, resource["data"])
@@ -592,7 +611,7 @@ func export_input() -> Dictionary:
 	for entry in animation_entries:
 		if game.begins_with("AITD") and not entry.get("associated", false) and entry["archive_index"] != _selected_animation_index:
 			continue
-		var resource := AITD_PAK.read_entry(_aitd_directory.path_join("LISTANIM.PAK"), entry["archive_index"]) if game.begins_with("AITD") else _read_entry("ANIM.HQR", entry["archive_index"])
+		var resource := _read_aitd_entry("LISTANIM.PAK", entry["archive_index"]) if game.begins_with("AITD") else _read_entry("ANIM.HQR", entry["archive_index"])
 		if not resource["ok"]:
 			return {"ok": false, "error": "ANIM #%d: %s" % [entry["archive_index"], resource["error"]]}
 		var decoded := _decode_animation(entry["archive_index"], resource["data"])

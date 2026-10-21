@@ -67,8 +67,14 @@ def main() -> int:
     parser.add_argument("entry", type=int, nargs="?")
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--animation-catalog", action="store_true")
+    parser.add_argument("--life-animation-map", action="store_true")
     args = parser.parse_args()
     try:
+        if args.life_animation_map:
+            from life_links import build_links
+            links, failures, total = build_links(args.archive)
+            print(json.dumps({"links": links, "parsed_scripts": total - failures, "total_scripts": total}))
+            return 0
         if args.animation_catalog:
             _, count = read_entry(args.archive, 0)
             catalog = []

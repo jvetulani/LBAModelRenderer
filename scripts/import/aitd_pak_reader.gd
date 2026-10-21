@@ -2,6 +2,9 @@ class_name AITDPakReader
 extends RefCounted
 
 const HELPER := "res://tools/aitd/pak_entry.py"
+const LIFE_DECODER = preload("res://scripts/import/aitd_life_decoder.gd")
+static var _life_cache: Dictionary = {}
+static var _web_unpacker_ready := false
 
 
 static func _helper_path() -> String:
@@ -10,7 +13,7 @@ static func _helper_path() -> String:
 	var directory := ProjectSettings.globalize_path("user://aitd_tools")
 	if DirAccess.make_dir_recursive_absolute(directory) != OK:
 		return ""
-	for name in ["pak_entry.py", "unpak.c"]:
+	for name in ["pak_entry.py", "unpak.c", "life_links.py", "life_opcodes.json"]:
 		var source := FileAccess.open("res://tools/aitd/" + name, FileAccess.READ)
 		if source == null:
 			return ""
@@ -56,6 +59,93 @@ static func read_entry(archive_path: String, index: int) -> Dictionary:
 	return {"ok": true, "data": bytes, "entry_count": int(str(output[0]).strip_edges())}
 
 
+static func _ensure_web_unpacker() -> bool:
+	if _web_unpacker_ready:
+		return true
+	var wasm := FileAccess.get_file_as_bytes("res://tools/aitd/unpak.wasm")
+	if wasm.is_empty():
+		return false
+	var setup := """
+		(() => {
+			const binary = Uint8Array.from(atob('%s'), ch => ch.charCodeAt(0));
+			const module = new WebAssembly.Module(binary);
+			const api = new WebAssembly.Instance(module).exports;
+			window.lbaAitdExplode = (encoded, unpacked, flags) => {
+				const packed = Uint8Array.from(atob(encoded), ch => ch.charCodeAt(0));
+				const needed = packed.length + unpacked + 8 * 1024 * 1024;
+				const pages = Math.ceil(needed / 65536);
+				if (api.memory.buffer.byteLength < pages * 65536)
+					api.memory.grow(pages - api.memory.buffer.byteLength / 65536);
+				api.reset_heap();
+				const input = api.malloc(packed.length);
+				const output = api.malloc(unpacked);
+				new Uint8Array(api.memory.buffer, input, packed.length).set(packed);
+				api.PAK_explode(input, output, packed.length, unpacked, flags);
+				const bytes = new Uint8Array(api.memory.buffer, output, unpacked);
+				const chunks = [];
+				for (let i = 0; i < bytes.length; i += 32768)
+					chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 32768)));
+				return btoa(chunks.join(''));
+			};
+			return true;
+		})()
+	""" % Marshalls.raw_to_base64(wasm)
+	_web_unpacker_ready = bool(JavaScriptBridge.eval(setup))
+	return _web_unpacker_ready
+
+
+static func read_entry_bytes(archive: PackedByteArray, index: int) -> Dictionary:
+	if archive.size() < 8:
+		return {"ok": false, "error": "PAK header is truncated"}
+	var first_offset := int(archive.decode_u32(4))
+	var count := int(first_offset / 4) - 2
+	if first_offset > archive.size() or index < 0 or index >= count:
+		return {"ok": false, "error": "PAK entry %d is out of range" % index}
+	var offset := int(archive.decode_u32((index + 1) * 4))
+	if offset + 16 > archive.size():
+		return {"ok": false, "error": "PAK entry is truncated"}
+	var info := offset + maxi(int(archive.decode_u32(offset)), 4)
+	if info + 12 > archive.size():
+		return {"ok": false, "error": "PAK entry descriptor is truncated"}
+	var packed := int(archive.decode_u32(info))
+	var unpacked := int(archive.decode_u32(info + 4))
+	var mode := int(archive[info + 8])
+	var flags := int(archive[info + 9])
+	var start := info + 12 + int(archive.decode_u16(info + 10))
+	if packed < 0 or unpacked > 64_000_000 or start + packed > archive.size():
+		return {"ok": false, "error": "PAK entry payload is invalid"}
+	var payload := archive.slice(start, start + packed)
+	if mode == 0:
+		return {"ok": true, "data": payload, "entry_count": count}
+	if mode == 1 and OS.has_feature("web") and _ensure_web_unpacker():
+		var expression := "window.lbaAitdExplode(%s, %d, %d)" % [JSON.stringify(Marshalls.raw_to_base64(payload)), unpacked, flags]
+		var encoded: Variant = JavaScriptBridge.eval(expression)
+		if encoded is String:
+			var bytes := Marshalls.base64_to_raw(encoded)
+			if bytes.size() == unpacked:
+				return {"ok": true, "data": bytes, "entry_count": count}
+	return {"ok": false, "error": "PAK compression mode %d could not be decoded in this browser" % mode}
+
+
+static func animation_catalog_bytes(archive: PackedByteArray) -> Array:
+	var first := read_entry_bytes(archive, 0)
+	if not first.get("ok", false):
+		return []
+	var catalog := []
+	for index in range(int(first["entry_count"])):
+		var entry := first if index == 0 else read_entry_bytes(archive, index)
+		if not entry.get("ok", false):
+			continue
+		var data: PackedByteArray = entry["data"]
+		if data.size() < 4:
+			continue
+		var frames := int(data.decode_u16(0))
+		var groups := int(data.decode_u16(2))
+		if frames > 0 and groups > 0 and data.size() in [4 + frames * (8 + groups * 8), 4 + frames * (8 + groups * 16)]:
+			catalog.append([index, frames, groups])
+	return catalog
+
+
 static func animation_catalog(archive_path: String) -> Array:
 	if not FileAccess.file_exists(archive_path) or OS.has_feature("web"):
 		return []
@@ -67,12 +157,44 @@ static func animation_catalog(archive_path: String) -> Array:
 	return catalog if catalog is Array else []
 
 
+static func life_animation_map(directory: String) -> Dictionary:
+	if _life_cache.has(directory):
+		return _life_cache[directory]
+	if OS.has_feature("web") or not FileAccess.file_exists(directory.path_join("OBJETS.ITD")) or not FileAccess.file_exists(directory.path_join("LISTLIFE.PAK")):
+		return {}
+	var helper := _helper_path()
+	var output := []
+	if helper.is_empty() or OS.execute("python3", [helper, directory, "--life-animation-map"], output, true) != 0 or output.is_empty():
+		return {}
+	var parsed: Variant = JSON.parse_string(str(output[0]))
+	var links: Dictionary = parsed.get("links", {}) if parsed is Dictionary else {}
+	for key in links:
+		var ids: Array[int] = []
+		for value in links[key]:
+			ids.append(int(value))
+		links[key] = ids
+	_life_cache[directory] = links
+	return links
+
+
+static func life_animation_ids_bytes(archives: Dictionary, body_index: int) -> Array[int]:
+	if not archives.has("OBJETS.ITD") or not archives.has("LISTLIFE.PAK"):
+		return []
+	var archive: PackedByteArray = archives["LISTLIFE.PAK"]
+	return LIFE_DECODER.animation_ids(archives["OBJETS.ITD"], body_index, func(index: int) -> Dictionary:
+		return read_entry_bytes(archive, index)
+	)
+
+
 static func scene_animation_ids(directory: String, body_index: int) -> Array[int]:
 	# OBJETS.ITD records the game's initial BODY/ANIM pairing for each object.
 	var path := directory.path_join("OBJETS.ITD")
 	if not FileAccess.file_exists(path):
 		return []
-	var bytes := FileAccess.get_file_as_bytes(path)
+	return scene_animation_ids_bytes(FileAccess.get_file_as_bytes(path), body_index)
+
+
+static func scene_animation_ids_bytes(bytes: PackedByteArray, body_index: int) -> Array[int]:
 	if bytes.size() < 2:
 		return []
 	var count := int(bytes.decode_u16(0))
@@ -90,11 +212,3 @@ static func scene_animation_ids(directory: String, body_index: int) -> Array[int
 		if animation_index >= 0 and not matched.has(animation_index):
 			matched.append(animation_index)
 	return matched
-
-
-static func confirmed_animation_ids(game: String, body_index: int) -> Array[int]:
-	# Some scene props have no initial OBJETS.ITD pairing. Body 4 is the
-	# rocking horse; its five-frame rock is LISTANIM #9 (confirmed in viewer).
-	if game == "AITD1" and body_index == 4:
-		return [9]
-	return []

@@ -9,9 +9,11 @@
     1.0  05 Oct 04  C. Voila        First release
 */
 
+#ifndef AITD_WASM
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#endif
 
 // --------------------------------------------------------------
 // Explode unpacking functions & types

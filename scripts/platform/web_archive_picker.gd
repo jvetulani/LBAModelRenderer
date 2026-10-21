@@ -55,10 +55,30 @@ func _ready() -> void:
 			input.oncancel = function () { input.remove(); };
 			input.onchange = async function () {
 				try {
-					const wanted = ['BODY.HQR', 'ANIM.HQR', 'RESS.HQR'];
 					const files = Array.from(input.files);
 					if (!files.length) return;
-					const folder = files[0].webkitRelativePath.split('/')[0];
+					const root = files[0].webkitRelativePath.split('/')[0];
+					const aitdBody = files.find(f => f.name.toUpperCase() === 'LISTBODY.PAK');
+					if (aitdBody) {
+						const path = aitdBody.webkitRelativePath.split('/').slice(0, -1).join('/');
+						const folderFiles = files.filter(f => f.webkitRelativePath.split('/').slice(0, -1).join('/') === path);
+						const required = ['LISTBODY.PAK', 'LISTANIM.PAK'];
+						const optional = ['ITD_RESS.PAK', 'CAMERA00.PAK', 'OBJETS.ITD', 'LISTLIFE.PAK'];
+						for (const name of required) {
+							const file = folderFiles.find(f => f.name.toUpperCase() === name);
+							if (!file) throw new Error('The selected AITD folder is missing ' + name);
+							await window.lbaReadArchive(name, path, await file.arrayBuffer());
+						}
+						for (const name of optional) {
+							const file = folderFiles.find(f => f.name.toUpperCase() === name);
+							if (file) await window.lbaReadArchive(name, path, await file.arrayBuffer());
+						}
+						const game = /(?:ALONE|AITD)3/i.test(path) ? 'AITD3' : (/(?:ALONE|AITD)2/i.test(path) ? 'AITD2' : 'AITD1');
+						window.lbaArchivesCallback(JSON.stringify({complete: true, folder: path, game: game}));
+						return;
+					}
+					const wanted = ['BODY.HQR', 'ANIM.HQR', 'RESS.HQR'];
+					const folder = root;
 					const selected = wanted.map(name => files.find(f =>
 						f.name.toUpperCase() === name &&
 						f.webkitRelativePath.split('/').length === 2));
@@ -151,16 +171,19 @@ func _on_browser_files(arguments: Array) -> void:
 		failed.emit(str(message["error"]))
 		return
 	if message.get("complete", false):
-		for required in ["BODY.HQR", "ANIM.HQR", "RESS.HQR"]:
+		var aitd := str(message.get("game", "")).begins_with("AITD")
+		for required in (["LISTBODY.PAK", "LISTANIM.PAK"] if aitd else ["BODY.HQR", "ANIM.HQR", "RESS.HQR"]):
 			if not _pending_archives.has(required):
 				failed.emit("Browser source is missing %s" % required)
 				return
 		archives = _pending_archives.duplicate()
+		if aitd:
+			archives["_aitd_game"] = str(message["game"])
 		_pending_archives.clear()
 		archives_ready.emit(archives, _folder_name)
 		return
 	var name: String = message.get("name", "")
-	if not name in ["BODY.HQR", "ANIM.HQR", "FILE3D.HQR", "INVOBJ.HQR", "OBJFIX.HQR", "RESS.HQR"]:
+	if not name in ["BODY.HQR", "ANIM.HQR", "FILE3D.HQR", "INVOBJ.HQR", "OBJFIX.HQR", "RESS.HQR", "LISTBODY.PAK", "LISTANIM.PAK", "ITD_RESS.PAK", "CAMERA00.PAK", "OBJETS.ITD", "LISTLIFE.PAK"]:
 		failed.emit("Browser returned an unexpected archive")
 		return
 	_pending_archives[name] = Marshalls.base64_to_raw(message.get("data", ""))

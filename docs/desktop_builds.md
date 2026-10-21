@@ -4,7 +4,7 @@ These are portable x86-64 builds of LBA Model Renderer for Windows and Linux. Ex
 
 Choose your own LBA1, LBA2, or 1996 LBA2 demo installation folder in the app. Game archives are not included in these downloads.
 
-Alone in the Dark 1–3 PAK files can also be opened on desktop. This importer currently calls local Python 3 and a C compiler (`cc`) to unpack compressed PAK entries. It was tested on Linux; AITD import in the Windows package has not been verified.
+Alone in the Dark 1–3 PAK files can also be opened on desktop. This importer currently calls local Python 3 and a C compiler (`cc`) to unpack compressed PAK entries. It was tested on Linux; AITD import in the Windows package has not been verified. The web viewer unpacks supported PAK entries locally in the browser.
 
 **Export GLB** works within the app. **Export Blender** needs Blender installed on your computer and available as `blender` on your PATH. You can also set the `LBA_BLENDER` environment variable to the full path of the Blender executable. Blender is not bundled.
 
