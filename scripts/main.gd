@@ -29,6 +29,7 @@ func _ready() -> void:
 	ui.platform_visible_changed.connect(func(visible: bool) -> void: display_platform.visible = visible)
 	ui.shadow_visible_changed.connect(viewer.set_shadow_visible)
 	ui.wireframe_visible_changed.connect(viewer.set_wireframe_visible)
+	ui.bones_visible_changed.connect(viewer.set_bones_visible)
 	ui.motion_grid_visible_changed.connect(viewer.set_motion_grid_visible)
 	ui.lba2_palette_selected.connect(_select_lba2_palette)
 	display_platform.set_dither_mode(ui.dither_mode.get_selected_id())
@@ -94,7 +95,7 @@ func _load_source(directory: String, body_index: int) -> void:
 	if not OS.has_feature("web") and directory.is_empty():
 		ui.set_status("Choose a local game installation folder first.")
 		return
-	var result := viewer.load_archives(_web_archives, body_index) if OS.has_feature("web") else viewer.load_body(directory, body_index)
+	var result := viewer.load_archives(_web_archives, body_index, ui.asset_kind()) if OS.has_feature("web") else viewer.load_body(directory, body_index, ui.asset_kind())
 	if not result["ok"]:
 		ui.set_share_available(false)
 		_on_web_load_failed(result["error"])
@@ -102,7 +103,7 @@ func _load_source(directory: String, body_index: int) -> void:
 	_active_source = directory
 	ui.set_body_entry_count(result["entry_count"])
 	ui.set_share_available(OS.has_feature("web") and (directory.begins_with("https://") or directory.begins_with("http://")))
-	orbit_camera.frame_points(result["points"], stand_point.position)
+	orbit_camera.frame_points(result["points"], stand_point.position, 2.05 if ui.asset_kind() == "inventory" and not viewer.game.begins_with("AITD") else 1.45)
 	display_platform.set_game(viewer.game)
 	ui.set_game(viewer.game)
 	ui.set_current_body(body_index)
@@ -110,7 +111,11 @@ func _load_source(directory: String, body_index: int) -> void:
 	viewer.set_dither_mode(ui.dither_mode.get_selected_id())
 	ui.set_animations(result["animations"])
 	var shadow_note := "source shadow" if result["shadow_loaded"] else "shadow unavailable"
-	ui.set_status("%s; %s; %d associated animations." % [result["summary"], shadow_note, result["animations"].size()])
+	var associated_count := 0
+	for entry in result["animations"]:
+		if entry.get("associated", true):
+			associated_count += 1
+	ui.set_status("%s; %s; %d associated animations%s." % [result["summary"], shadow_note, associated_count, "; other compatible clips available under More" if result["animations"].size() > associated_count else ""])
 	var animation_id := _pending_animation if ui.select_animation_id(_pending_animation) else ui.first_animation_id()
 	_pending_animation = -1
 	if animation_id >= 0:

@@ -14,12 +14,20 @@ static func decode_compact_groups(bytes: PackedByteArray) -> Dictionary:
 	return _decode(bytes, true)
 
 
-static func _decode(bytes: PackedByteArray, compact_groups: bool) -> Dictionary:
+static func decode_static(bytes: PackedByteArray) -> Dictionary:
+	# OBJFIX.HQR in the 1996 demo has the ordinary point/normal/face tables
+	# but no animation group table. Give its points one exportable root group.
+	return _decode(bytes, false, true)
+
+
+static func _decode(bytes: PackedByteArray, compact_groups: bool, static_body: bool = false) -> Dictionary:
 	if bytes.size() < 18:
 		return _error("Body header is truncated")
 	var flags := int(bytes.decode_u16(0))
-	if flags & 2 == 0:
+	if flags & 2 == 0 and not static_body:
 		return _error("This proof of concept supports animated LBA1 bodies only")
+	if static_body and flags & 2 != 0:
+		return _error("Expected a static body without animation groups")
 	var cursor := 16 + int(bytes.decode_u16(14))
 	if not _has(bytes, cursor, 2):
 		return _error("Body information section is truncated")
@@ -37,14 +45,16 @@ static func _decode(bytes: PackedByteArray, compact_groups: bool) -> Dictionary:
 		))
 		cursor += 6
 
-	if not _has(bytes, cursor, 2):
-		return _error("Body group count is missing")
-	var group_count := int(bytes.decode_u16(cursor))
-	cursor += 2
+	var group_count := 1 if static_body else 0
+	if not static_body:
+		if not _has(bytes, cursor, 2):
+			return _error("Body group count is missing")
+		group_count = int(bytes.decode_u16(cursor))
+		cursor += 2
 	var group_stride := 8 if compact_groups else 38
-	if not _has(bytes, cursor, group_count * group_stride):
+	if not static_body and not _has(bytes, cursor, group_count * group_stride):
 		return _error("Body group table is truncated")
-	var group_bytes := bytes.slice(cursor, cursor + group_count * group_stride)
+	var group_bytes := PackedByteArray() if static_body else bytes.slice(cursor, cursor + group_count * group_stride)
 	var groups := []
 	var pose_points := points.duplicate()
 	var assigned := PackedByteArray()
@@ -52,7 +62,10 @@ static func _decode(bytes: PackedByteArray, compact_groups: bool) -> Dictionary:
 	var point_groups := PackedInt32Array()
 	point_groups.resize(point_count)
 	var next_point := 0
-	for group_index in range(group_count):
+	if static_body:
+		groups.append({"first": 0, "count": point_count, "pivot": 0, "parent": -1})
+		assigned.fill(1)
+	for group_index in range(0 if static_body else group_count):
 		var group_start := cursor + group_index * group_stride
 		var first := next_point if compact_groups else _point_index(bytes.decode_u16(group_start), point_count)
 		var count := int(bytes.decode_u16(group_start)) if compact_groups else int(bytes.decode_u16(group_start + 2))
@@ -83,7 +96,8 @@ static func _decode(bytes: PackedByteArray, compact_groups: bool) -> Dictionary:
 	for point_index in range(point_count):
 		if assigned[point_index] == 0:
 			return _error("Point %d has no group" % point_index)
-	cursor += group_count * group_stride
+	if not static_body:
+		cursor += group_count * group_stride
 
 	if not _has(bytes, cursor, 2):
 		return _error("Body normal count is missing")
@@ -125,7 +139,7 @@ static func _decode(bytes: PackedByteArray, compact_groups: bool) -> Dictionary:
 		var texture_mask := Vector2(255, 255)
 		var texture_handle := -1
 		var face_normal := -1
-		var demo_flat_texture := compact_groups and render_type in [12, 16, 20, 24]
+		var demo_flat_texture := (compact_groups or static_body) and render_type in [12, 16, 20, 24]
 		if (render_type >= 7 and render_type < 9) or demo_flat_texture:
 			if not _has(bytes, cursor, 2):
 				return _error("Polygon %d face normal is truncated" % polygon_index)
@@ -152,7 +166,7 @@ static func _decode(bytes: PackedByteArray, compact_groups: bool) -> Dictionary:
 				return _error("Polygon %d has an invalid point reference" % polygon_index)
 			point_indices.append(point_offset / 6)
 			normal_indices.append(normal_index)
-		if compact_groups and render_type in [12, 13, 14, 16, 20, 24]:
+		if (compact_groups or static_body) and render_type in [12, 13, 14, 16, 20, 24, 36]:
 			# 1996 LBA2 demo keeps a texture region and one UV pair per point
 			# directly after the old-style polygon's point/normal references.
 			if not _has(bytes, cursor, 4 + vertex_count * 4):

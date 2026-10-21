@@ -5,6 +5,62 @@
 class_name BodyNames
 extends RefCounted
 
+# Inventory labels are viewer metadata; the HQR and PAK entries contain no names.
+const LBA1_INVENTORY: Array[String] = [
+	"Holomap", "Magic ball", "FunFrock's saber", "Gawley's horn", "Tunic",
+	"Book of Bù", "Sendell's medallion", "Clear water", "Red card", "Blue card",
+	"ID card", "Mr. Mies pass", "Proto-Pack", "Snowboard", "Meca Penguin",
+	"Gas", "Pirate flag", "Magic flute", "Space guitar", "Hair dryer",
+	"Ancestral key", "Syrup bottle", "Empty bottle", "Ferry ticket", "Keypad",
+	"Coffee can", "Bonuses list", "Clover leaf",
+]
+
+# First 54 entries follow the game's inventory object table. Later entries are
+# preserved as props and parts; descriptive labels do not imply an assembly.
+const LBA2_INVENTORY: Array[String] = [
+	"Holomap", "Magic ball", "Darts", "Sendell's ball", "Tunic and medallion",
+	"Incandescent pearl", "Pyramid key", "Steering wheel", "Kashes", "Pisto-Laser",
+	"Emperor's sword", "Wannie's glove", "Proto-Pack", "Ferry ticket", "Nitro-Meca-Penguin",
+	"GazoGem can", "Dissidents' ring", "Gallic acid", "Ferryman's song", "Lightning ring",
+	"Umbrella", "Gems", "Blue Triton's horn", "Blowgun", "Itinerary token",
+	"Tart slice", "Portable radio", "Garden balsam", "Magic slate", "Translator",
+	"Wizard's diploma", "Franco key piece", "Sup key piece", "Mosquibee key piece", "Blafard key piece",
+	"Island CX key", "Pickaxe", "Burgermaster's key", "Burgermaster's notes", "Protective spell",
+	"Green magic ball", "Red magic ball", "Fire magic ball", "Zlitos", "Dark Monk's key",
+	"Memory viewer", "Blowtron", "Wizard's tunic", "Super Jet-Pack", "Crystal piece",
+	"Working Pisto-Laser", "Green lightning ring", "Red lightning ring", "Fire lightning ring",
+]
+
+const LBA2_PROPS := {
+	60: "Clover leaf", 61: "Darts", 62: "Protective effect", 63: "Laser", 64: "Laser impact",
+	65: "Strong laser", 66: "Black piece 1", 67: "Black piece 2", 68: "Black piece 3",
+	69: "Black piece 4", 70: "Turquoise eye", 71: "Green crystal", 72: "Red crystal",
+	73: "Red cube", 74: "Black diamond", 75: "Crab", 76: "White ball", 77: "Red ball",
+	78: "Green wall piece 1", 79: "Green wall piece 2", 80: "Green wall piece 3",
+	81: "Green wall piece 4", 82: "Franco soldier 1", 83: "Franco soldier 2",
+	84: "Folded green piece 1", 85: "Folded green piece 2", 86: "Folded green piece 3",
+	87: "Folded green piece 4", 88: "Folded green piece 5", 89: "Folded green piece 6",
+	90: "Folded green piece 7", 91: "Folded green piece 8", 92: "Propellant",
+	93: "Box", 94: "Stick", 95: "Flat piece 1", 96: "Flat piece 2",
+	97: "Flat piece 3", 98: "Flat piece 4", 99: "Yellow-blue pillar",
+	100: "Green-sand piece", 101: "Yellow-turquoise stick", 102: "Yellow-turquoise piece",
+	103: "Brown eye", 104: "Missile",
+}
+
+static func inventory_name_for(game: String, index: int) -> String:
+	if game == "LBA1":
+		return LBA1_INVENTORY[index] if index >= 0 and index < LBA1_INVENTORY.size() else ""
+	if game == "LBA2" or game == "LBA2-96":
+		if index >= 0 and index < LBA2_INVENTORY.size():
+			return LBA2_INVENTORY[index]
+		return LBA2_PROPS.get(index, "")
+	return ""
+
+static func aitd_name_for(game: String, index: int) -> String:
+	if game == "AITD1" and index == 4:
+		return "Rocking horse"
+	return ""
+
 # Source: https://lbafileinfo.kaziq.net/index.php/LBA1:Body.hqr
 const LBA1_RETAIL: Array[String] = [
 	"Twinsen: Tunic and Sendell's medallion model", # 0

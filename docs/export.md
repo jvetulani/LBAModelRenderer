@@ -24,7 +24,7 @@ blender -b --factory-startup --python tools/import_lba1_glb.py -- character.glb 
 
 - A 256-colour source VGA palette is embedded as a nearest-filtered texture. Fractional palette coordinates are retained in UVs for Blender's reconstructed material.
 - Polygons, sphere triangles and capped rectangular-prism lines share one skinned mesh. Each point is weighted to its original LBA1 group, including polygons that span groups.
-- Every distinct associated ANIM resource is exported. Clips with a nonzero source loop frame also get a `*_loop` clip. A GLB therefore may have more clips than source actions.
+- Every distinct associated ANIM resource is exported. Clips with a nonzero source loop frame also get a `*_loop` clip. A GLB therefore may have more clips than source actions. Frame-header travel is keyed on the existing `Group_00` root bone in GLB and Blender; Blender repeats those location curves with an accumulating offset.
 - When an LBA2 FILE3D character changes BODY forms between actions, the GLB includes each required form as a separate skin. Each action activates its matching form; the Blender conversion retains all forms and their actions.
 - The actor shadow is a separate alpha-masked mesh with its source sprite image embedded.
 

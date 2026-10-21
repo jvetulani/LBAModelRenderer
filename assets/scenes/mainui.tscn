@@ -363,14 +363,43 @@ theme_override_styles/pressed = SubResource("NoSwitchFrame")
 theme_override_icons/checked = SubResource("ToggleOnCropped")
 theme_override_icons/unchecked = SubResource("ToggleOffCropped")
 
+[node name="BonesLabel" type="Label" parent="Screen"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -220.0
+offset_top = 396.0
+offset_right = -88.0
+offset_bottom = 442.0
+vertical_alignment = 1
+horizontal_alignment = 2
+text = "Bones"
+theme_override_font_sizes/font_size = 18
+
+[node name="BonesToggle" type="CheckButton" parent="Screen"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -80.0
+offset_top = 396.0
+offset_right = -12.0
+offset_bottom = 442.0
+custom_minimum_size = Vector2(68, 46)
+theme_override_constants/icon_max_width = 68
+theme_override_styles/normal = SubResource("NoSwitchFrame")
+theme_override_styles/hover = SubResource("NoSwitchFrame")
+theme_override_styles/pressed = SubResource("NoSwitchFrame")
+theme_override_icons/checked = SubResource("ToggleOnCropped")
+theme_override_icons/unchecked = SubResource("ToggleOffCropped")
+
 [node name="LBA2Palette" type="OptionButton" parent="Screen"]
 layout_mode = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -212.0
-offset_top = 396.0
+offset_top = 454.0
 offset_right = -12.0
-offset_bottom = 436.0
+offset_bottom = 494.0
 selected = 0
 item_count = 12
 popup/item_0/text = "Citadel · clear/indoors"

@@ -20,7 +20,8 @@ func _export(format: String, destination: String) -> void:
 	if not result["ok"]:
 		ui.set_status(result["error"])
 		return
-	var filename := "%s-body-%03d.glb" % [str(input["game"]).to_lower(), ui.body_index()]
+	var label := "inventory" if ui.asset_kind() == "inventory" else ("model" if str(input["game"]).begins_with("AITD") else "body")
+	var filename := "%s-%s-%03d.glb" % [str(input["game"]).to_lower(), label, ui.body_index()]
 	if OS.has_feature("web"):
 		JavaScriptBridge.download_buffer(result["bytes"], filename, "model/gltf-binary")
 		ui.set_status("Downloaded %s with %d source actions." % [filename, result["source_actions"]])

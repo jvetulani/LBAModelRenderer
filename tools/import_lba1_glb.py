@@ -305,8 +305,11 @@ def make_all_actions_cyclic():
                 for channelbag in strip.channelbags:
                     for curve in channelbag.fcurves:
                         cycles = curve.modifiers.new("CYCLES")
-                        cycles.mode_before = "REPEAT"
-                        cycles.mode_after = "REPEAT"
+                        # Actor travel must accumulate on later loops, while
+                        # rotations and child-bone poses repeat in place.
+                        repeat_mode = "REPEAT_OFFSET" if curve.data_path in ("location", 'pose.bones["Group_00"].location') else "REPEAT"
+                        cycles.mode_before = repeat_mode
+                        cycles.mode_after = repeat_mode
                         curves_updated += 1
     return curves_updated
 
@@ -379,17 +382,18 @@ def main():
     # Preserve imported glTF action slots on the armature. The current clip is
     # the first one; all source-associated actions remain available in the file.
     armatures = [obj for obj in bpy.data.objects if obj.type == "ARMATURE"]
-    if len(armatures) != 1 or not bpy.data.actions:
-        raise RuntimeError("GLB has no usable armature/actions")
-    cyclic_curves = make_all_actions_cyclic()
-    if cyclic_curves == 0:
+    if len(armatures) != 1:
+        raise RuntimeError("GLB has no usable armature")
+    cyclic_curves = make_all_actions_cyclic() if bpy.data.actions else 0
+    if bpy.data.actions and cyclic_curves == 0:
         raise RuntimeError("Imported actions have no curves to cycle")
     idle_actions = sorted((action for action in bpy.data.actions if action.name.startswith("Idle_ANIM_")), key=lambda action: action.name)
-    if idle_actions:
+    preview_actions = idle_actions or sorted(bpy.data.actions, key=lambda action: action.name)
+    if preview_actions:
         armature = armatures[0]
         armature.animation_data_create()
-        armature.animation_data.action = idle_actions[0]
-        armature.animation_data.action_slot = idle_actions[0].slots[0]
+        armature.animation_data.action = preview_actions[0]
+        armature.animation_data.action_slot = preview_actions[0].slots[0]
         scene.frame_set(1)
     scene.render.film_transparent = False
     bpy.ops.file.pack_all()

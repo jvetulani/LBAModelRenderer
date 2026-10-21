@@ -54,7 +54,8 @@ for action in bpy.data.actions:
                 for curve in channelbag.fcurves:
                     cycles = [modifier for modifier in curve.modifiers if modifier.type == "CYCLES"]
                     assert len(cycles) == 1
-                    assert cycles[0].mode_before == "REPEAT" and cycles[0].mode_after == "REPEAT"
+                    expected = "REPEAT_OFFSET" if curve.data_path in ("location", 'pose.bones["Group_00"].location') else "REPEAT"
+                    assert cycles[0].mode_before == expected and cycles[0].mode_after == expected
                     action_curves += 1
     assert action_curves > 0, action.name
     curve_count += action_curves
@@ -70,7 +71,8 @@ if walk.name == "Walk_ANIM_109":
     first = curve.keyframe_points[0].co.x
     last = curve.keyframe_points[-1].co.x
     sample = first + (last - first) * 0.27
-    assert abs(curve.evaluate(sample) - curve.evaluate(sample + last - first)) < 1e-4
+    expected_offset = curve.keyframe_points[-1].co.y - curve.keyframe_points[0].co.y if curve.data_path in ("location", 'pose.bones["Group_00"].location') else 0.0
+    assert abs(curve.evaluate(sample + last - first) - curve.evaluate(sample) - expected_offset) < 1e-4
 
 armature = next(obj for obj in bpy.data.objects if obj.type == "ARMATURE")
 armature.animation_data_create()

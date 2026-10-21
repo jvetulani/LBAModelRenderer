@@ -1,6 +1,6 @@
-[gd_resource type="Theme" load_steps=3 format=3]
+[gd_resource type="Theme" format=3 uid="uid://il75l1cym83k"]
 
-[ext_resource type="FontFile" path="res://assets/ui/fonts/ShortStack-Regular.ttf" id="1_font"]
+[ext_resource type="FontFile" uid="uid://by31o0bt006m3" path="res://assets/ui/fonts/ShortStack-Regular.ttf" id="1_font"]
 
 [sub_resource type="FontVariation" id="MediumShortStack"]
 base_font = ExtResource("1_font")

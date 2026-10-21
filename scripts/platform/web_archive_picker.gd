@@ -67,8 +67,10 @@ func _ready() -> void:
 					for (let index = 0; index < wanted.length; index++) {
 						await window.lbaReadArchive(wanted[index], folder, await selected[index].arrayBuffer());
 					}
-					const file3d = files.find(f => f.name.toUpperCase() === 'FILE3D.HQR' && f.webkitRelativePath.split('/').length === 2);
-					if (file3d) await window.lbaReadArchive('FILE3D.HQR', folder, await file3d.arrayBuffer());
+					for (const name of ['FILE3D.HQR', 'INVOBJ.HQR', 'OBJFIX.HQR']) {
+						const optional = files.find(f => f.name.toUpperCase() === name && f.webkitRelativePath.split('/').length === 2);
+						if (optional) await window.lbaReadArchive(name, folder, await optional.arrayBuffer());
+					}
 					window.lbaArchivesCallback(JSON.stringify({complete: true, folder: folder}));
 				} catch (error) {
 					window.lbaArchivesCallback(JSON.stringify({error: String(error)}));
@@ -92,10 +94,12 @@ func _ready() -> void:
 				}
 			// Retail LBA2 does not have FILE3D.HQR. A missing optional file may
 			// reject at the CORS layer instead of returning an HTTP 404.
-			try {
-				const optional = await fetch(new URL('FILE3D.HQR', base));
-				if (optional.ok) await window.lbaReadArchive('FILE3D.HQR', path, await optional.arrayBuffer());
-			} catch (_) {}
+			for (const name of ['FILE3D.HQR', 'INVOBJ.HQR', 'OBJFIX.HQR']) {
+				try {
+					const optional = await fetch(new URL(name, base));
+					if (optional.ok) await window.lbaReadArchive(name, path, await optional.arrayBuffer());
+				} catch (_) {}
+			}
 				window.lbaArchivesCallback(JSON.stringify({complete: true, folder: path}));
 			} catch (error) {
 				window.lbaArchivesCallback(JSON.stringify({error: String(error)}));
@@ -156,7 +160,7 @@ func _on_browser_files(arguments: Array) -> void:
 		archives_ready.emit(archives, _folder_name)
 		return
 	var name: String = message.get("name", "")
-	if not name in ["BODY.HQR", "ANIM.HQR", "FILE3D.HQR", "RESS.HQR"]:
+	if not name in ["BODY.HQR", "ANIM.HQR", "FILE3D.HQR", "INVOBJ.HQR", "OBJFIX.HQR", "RESS.HQR"]:
 		failed.emit("Browser returned an unexpected archive")
 		return
 	_pending_archives[name] = Marshalls.base64_to_raw(message.get("data", ""))

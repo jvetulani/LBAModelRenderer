@@ -181,7 +181,7 @@ static func _build_single_scene(input: Dictionary, body_index: int = -1) -> Dict
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	material.albedo_texture = ImageTexture.create_from_image(_palette_image(palette, body.get("game", "LBA1") in ["LBA2", "LBA2-96"]))
+	material.albedo_texture = ImageTexture.create_from_image(_palette_image(palette, body.get("game", "LBA1") in ["LBA2", "LBA2-96"] or str(body.get("game", "")).begins_with("AITD")))
 	material.cull_mode = BaseMaterial3D.CULL_BACK
 	if translucent_solid:
 		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -397,6 +397,8 @@ static func _add_polygons(collector: MeshCollector, textured: Dictionary, body: 
 					face_right = maxf(face_right, points[index].z)
 		var normals: PackedInt32Array = polygon["normals"]
 		var face_normal := (points[indices[1]] - points[indices[0]]).cross(points[indices[2]] - points[indices[0]]).normalized()
+		if str(body.get("game", "")).begins_with("AITD"):
+			face_normal = -face_normal
 		var surface_offset := LBA2_APPEARANCE.surface_offset_for_face(body, polygon)
 		for triangle_index in range(1, indices.size() - 1):
 			var corners := PackedInt32Array([0, triangle_index + 1, triangle_index])
@@ -574,6 +576,7 @@ static func _add_shadow(scene: Node3D, sprite: Dictionary, palette: PackedByteAr
 
 static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_indices: PackedInt32Array, angle_scale: float, tick_rate: float, body: Dictionary) -> Animation:
 	var animation := Animation.new()
+	var is_aitd := str(body.get("game", "")).begins_with("AITD")
 	var times := PackedFloat32Array()
 	var time := 0.0
 	for position in range(frame_indices.size()):
@@ -581,12 +584,24 @@ static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_ind
 			time += float(decoded["frames"][frame_indices[position]]["duration_ticks"]) / tick_rate
 		times.append(time)
 	animation.length = maxf(time, 0.001)
+	# glTF collapses Skeleton3D's node into its root joint; a spatial track on
+	# Skeleton3D is lost during export. Put frame-header travel on Group_00.
+	var root_positions: Array[Vector3] = []
+	var root_position := Vector3.ZERO
+	for position in range(frame_indices.size()):
+		if position > 0:
+			root_position += Vector3(decoded["frames"][frame_indices[position]]["root_step"]) * SCALE
+		root_positions.append(root_position)
 	for group_index in range(skeleton.get_bone_count()):
 		var bone_path := NodePath("%s:Group_%02d" % [skeleton.name, group_index])
 		var rotation_track := animation.add_track(Animation.TYPE_ROTATION_3D)
 		animation.track_set_path(rotation_track, bone_path)
 		var position_track := animation.add_track(Animation.TYPE_POSITION_3D)
 		animation.track_set_path(position_track, bone_path)
+		var scale_track := -1
+		if is_aitd:
+			scale_track = animation.add_track(Animation.TYPE_SCALE_3D)
+			animation.track_set_path(scale_track, bone_path)
 		var rest_position := skeleton.get_bone_rest(group_index).origin
 		for position in range(frame_indices.size()):
 			var transforms: Array = decoded["frames"][frame_indices[position]]["transforms"]
@@ -594,19 +609,35 @@ static func _make_animation(skeleton: Skeleton3D, decoded: Dictionary, frame_ind
 			var rotation := Quaternion.IDENTITY
 			var bone_position := rest_position
 			if group_index == 0:
+				bone_position += root_positions[position]
+			var bone_scale := Vector3.ONE
+			if is_aitd and group_index == 0:
+				pass # FITD replaces the root group's state with actor orientation.
+			elif group_index == 0:
 				# Frame group 0 drives actor master rotation; its type-1 Y value
 				# is a turn step, not an upward bone translation.
 				var master_units := CharacterPose.master_rotation_units(decoded, frame_indices[position], frame_indices[position], 1.0)
 				var basis := Basis(Vector3.RIGHT, master_units.x * angle_scale) * Basis(Vector3.BACK, master_units.z * angle_scale) * Basis(Vector3.UP, master_units.y * angle_scale)
 				rotation = basis.get_rotation_quaternion()
+			elif is_aitd and (transform_data["type"] == 0 or transform_data.has("rotation")):
+				var values: Vector3i = transform_data["values"] if transform_data["type"] == 0 else transform_data["rotation"]
+				var basis := Basis(Vector3.BACK, float(values.z) * angle_scale) * Basis(Vector3.RIGHT, float(values.x) * angle_scale) * Basis(Vector3.UP, -float(values.y) * angle_scale)
+				rotation = basis.get_rotation_quaternion()
 			elif transform_data["type"] == 0:
 				var values: Vector3i = transform_data["values"]
 				var basis := Basis(Vector3.RIGHT, float(values.x) * angle_scale) * Basis(Vector3.BACK, float(values.z) * angle_scale) * Basis(Vector3.UP, float(values.y) * angle_scale)
 				rotation = basis.get_rotation_quaternion()
+			elif is_aitd and transform_data["type"] == 1:
+				var values: Vector3i = transform_data["values"]
+				bone_position += Vector3(-values.x, -values.y, -values.z) * AITDBodyDecoder.COORDINATE_SCALE * SCALE
+			elif is_aitd and transform_data["type"] == 2:
+				bone_scale += Vector3(transform_data["values"]) / 256.0
 			elif transform_data["type"] == 1:
 				bone_position += CharacterPose.limit_child_translation(body, group_index, Vector3(transform_data["values"])) * SCALE
 			animation.rotation_track_insert_key(rotation_track, times[position], rotation)
 			animation.position_track_insert_key(position_track, times[position], bone_position)
+			if is_aitd:
+				animation.scale_track_insert_key(scale_track, times[position], bone_scale)
 	return animation
 
 

@@ -1,6 +1,6 @@
 # LBA Model Renderer
 
-View and export character models and animations from **Little Big Adventure 1**, **Little Big Adventure 2**, and the **1996 LBA2 demo**. [Open the web viewer](https://jvetulani.github.io/LBAModelRenderer/) or run the Godot project locally.
+View and export character models and animations from **Little Big Adventure 1**, **Little Big Adventure 2**, and the **1996 LBA2 demo**. The desktop viewer also opens **Alone in the Dark 1–3** PAK models. [Open the web viewer](https://jvetulani.github.io/LBAModelRenderer/) or run the Godot project locally.
 
 Shareable character sheets: [LBA1](showcase/lba1-characters.png) and [LBA2](showcase/lba2-characters.png). Each shows 20 selected BODY entries rendered in the viewer, labeled by entry number.
 
@@ -8,7 +8,7 @@ Choose your own game folder in the viewer. The project does not include game arc
 
 To share a model from an HTTPS archive folder, enter the folder URL in the source field and load a BODY entry, then press **Copy link**. **Copy embed** makes the same link with `embed=1`, which hides the controls and display platform. Local folders cannot be shared as links. See [URL and archive setup](docs/urls-and-game-files.md) for all parameters, iframe examples, and the files each game needs.
 
-Press **Find…** beside the BODY number, or **Find model** on a narrow screen, to search by character, object, or entry number. Retail labels are adapted from [LBA1](https://lbafileinfo.kaziq.net/index.php/LBA1:Body.hqr) and [LBA2](https://lbafileinfo.kaziq.net/index.php/LBA2:Body.hqr) BODY catalogs (CC BY-SA), with character spellings checked against the [LBA Wiki](https://lba.fandom.com/wiki/Category:LBA2_Characters). Demo labels are currently limited to identified characters. The game archives contain numbered models, not embedded model names. Search treats `Zoe` and `Zoé` alike.
+Press **Find…** beside the entry number, or **Find model** on a narrow screen, to search by character, object, inventory item, or entry number. Retail body labels are adapted from [LBA1](https://lbafileinfo.kaziq.net/index.php/LBA1:Body.hqr) and [LBA2](https://lbafileinfo.kaziq.net/index.php/LBA2:Body.hqr) BODY catalogs (CC BY-SA), with character spellings checked against the [LBA Wiki](https://lba.fandom.com/wiki/Category:LBA2_Characters). Inventory labels are viewer metadata based on the game inventory tables and [OBJFIX catalog](https://lbafileinfo.kaziq.net/index.php/LBA2%3AObjfix.hqr); unusual OBJFIX parts remain separate entries. Demo inventory labels are provisional. AITD has one model list, with names only for identified models. The archives contain numbered models, not embedded model names. Search treats `Zoe` and `Zoé` alike.
 
 On touch screens, drag with one finger to orbit, pinch to zoom, and drag with two fingers to pan.
 

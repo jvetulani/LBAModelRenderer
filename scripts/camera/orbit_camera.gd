@@ -13,7 +13,7 @@ func _ready() -> void:
 	_update_pose()
 
 
-func frame_points(points: PackedVector3Array, stand_position: Vector3) -> void:
+func frame_points(points: PackedVector3Array, stand_position: Vector3, padding: float = 1.45) -> void:
 	var minimum := points[0]
 	var maximum := points[0]
 	for point in points:
@@ -24,7 +24,7 @@ func frame_points(points: PackedVector3Array, stand_position: Vector3) -> void:
 	var aspect := viewport_size.x / maxf(viewport_size.y, 1.0)
 	var horizontal_span := Vector2(extent.x, extent.z).length()
 	focus = stand_position + Vector3((minimum.x + maximum.x) * 0.5 * CharacterMeshBuilder.UNIT_SCALE, extent.y * 0.5, (minimum.z + maximum.z) * 0.5 * CharacterMeshBuilder.UNIT_SCALE)
-	size = maxf(1.8, maxf(extent.y, horizontal_span / aspect) * 1.45)
+	size = maxf(1.8 * padding / 1.45, maxf(extent.y, horizontal_span / aspect) * padding)
 	maximum_size = maxf(12.0, size * 2.0)
 	distance = maxf(3.0, size * 1.8)
 	_update_pose()

@@ -9,6 +9,10 @@ const LBA1_SAIL_REPAIR = preload("res://scripts/animation/lba1_sail_repair.gd")
 const MOTION_GRID_SHADER = preload("res://shaders/motion_grid.gdshader")
 const LBA2_OVERRIDES = preload("res://scripts/render/lba2_model_overrides.gd")
 const LBA2_ANIMATED_ATLAS = preload("res://scripts/render/lba2_animated_texture_atlas.gd")
+const AITD_PAK = preload("res://scripts/import/aitd_pak_reader.gd")
+const AITD_BODY = preload("res://scripts/import/aitd_body_decoder.gd")
+const AITD_ANIMATION = preload("res://scripts/import/aitd_animation_decoder.gd")
+const AITD_POSE = preload("res://scripts/animation/aitd_pose.gd")
 
 signal playback_frame_changed(frame_index: int, frame_count: int, duration_ticks: int)
 signal playback_ended
@@ -19,14 +23,17 @@ var character: Node3D
 var body: Dictionary = {}
 var animation: Dictionary = {}
 var animation_entries: Array = []
+var _selected_animation_index := -1
 var playing := false
 var speed := 1.0
 var _directory := ""
+var _aitd_directory := ""
 var _archives := {}
 var _palette := PackedByteArray()
 var _lba2_palette_index := 42
 var game := ""
 var _body_index := 0
+var asset_kind := "body"
 var _display_body_index := 0
 var _motion_grid: MeshInstance3D
 var _motion_grid_enabled := true
@@ -35,6 +42,7 @@ var _shadow: MeshInstance3D
 var _shadow_sprite: Dictionary = {}
 var _shadow_enabled := true
 var _wireframe_enabled := false
+var _bones_enabled := false
 var _current_frame := 0
 var _phase_ticks := 0.0
 var _finished_one_shot := false
@@ -42,15 +50,97 @@ var _master_rotation_offset := Vector3.ZERO
 var _animated_atlas: RefCounted
 
 
-func load_body(directory: String, body_index: int) -> Dictionary:
+func load_body(directory: String, body_index: int, kind: String = "body") -> Dictionary:
 	_directory = directory
 	_archives = {}
+	asset_kind = kind
+	if kind.begins_with("aitd") or (not FileAccess.file_exists(directory.path_join("BODY.HQR")) and AITD_PAK.resolve_directory(directory).get("ok", false)):
+		return _load_aitd_body(directory, body_index, kind)
 	return _load_body(body_index)
 
 
-func load_archives(archives: Dictionary, body_index: int) -> Dictionary:
+func _load_aitd_body(source: String, entry_index: int, kind: String) -> Dictionary:
+	var requested := kind.to_upper() if kind.begins_with("aitd") else ""
+	var located: Dictionary = AITD_PAK.resolve_directory(source, requested)
+	if not located["ok"]:
+		return located
+	var game_directory: String = located["directory"]
+	_aitd_directory = game_directory
+	var body_entry: Dictionary = AITD_PAK.read_entry(game_directory.path_join("LISTBODY.PAK"), entry_index)
+	if not body_entry["ok"]:
+		return body_entry
+	var decoded: Dictionary = AITD_BODY.decode(body_entry["data"], located["game"])
+	if not decoded["ok"]:
+		return decoded
+	var palette_entry: Dictionary = AITD_PAK.read_entry(game_directory.path_join("ITD_RESS.PAK"), 3)
+	var palette := PackedByteArray()
+	if palette_entry["ok"] and palette_entry["data"].size() == 768:
+		palette = palette_entry["data"]
+	else:
+		var camera_entry: Dictionary = AITD_PAK.read_entry(game_directory.path_join("CAMERA00.PAK"), 0)
+		if camera_entry["ok"] and camera_entry["data"].size() >= 64768:
+			palette = camera_entry["data"].slice(64000, 64768)
+	if palette.size() != 768:
+		return {"ok": false, "error": "AITD palette could not be found in ITD_RESS.PAK or CAMERA00.PAK"}
+	if is_instance_valid(character):
+		remove_child(character)
+		character.queue_free()
+	if is_instance_valid(_shadow):
+		remove_child(_shadow)
+		_shadow.queue_free()
+	_shadow = null
+	_root_motion_accumulated = Vector3.ZERO
+	_ensure_motion_grid()
+	_motion_grid.position = stand_position - Vector3.UP * 0.01
+	_motion_grid.visible = false
+	_palette = palette
+	game = located["game"]
+	asset_kind = kind if kind.begins_with("aitd") else "body"
+	_body_index = entry_index
+	_display_body_index = entry_index
+	body = decoded
+	animation = {}
+	_selected_animation_index = -1
+	animation_entries = _find_aitd_animations()
+	playing = false
+	_current_frame = 0
+	_phase_ticks = 0.0
+	_animated_atlas = null
+	character = CharacterMeshBuilder.build_static_pose(body, _palette)
+	character.get_node("Wireframe").visible = _wireframe_enabled
+	character.get_node("Bones").visible = _bones_enabled
+	var polygon_material: ShaderMaterial = character.get_node("Polygons").material_override
+	palette_texture_ready.emit(polygon_material.get_shader_parameter("palette_texture"))
+	var points: PackedVector3Array = body["pose_points"]
+	var min_y := points[0].y
+	for point in points:
+		min_y = minf(min_y, point.y)
+	character.position = stand_position - Vector3.UP * min_y * CharacterMeshBuilder.UNIT_SCALE
+	add_child(character)
+	return {"ok": true, "points": points, "animations": animation_entries, "entry_count": body_entry["entry_count"], "shadow_loaded": false, "summary": "%s LISTBODY.PAK #%d: %d points, %d polygons, %d lines, %d spheres" % [game, entry_index, points.size(), body["polygons"].size(), body["lines"].size(), body["spheres"].size()]}
+
+
+func _find_aitd_animations() -> Array:
+	if body["groups"].is_empty():
+		return []
+	var found := []
+	var scene_clips := AITD_PAK.scene_animation_ids(_aitd_directory, _body_index)
+	var confirmed_clips := AITD_PAK.confirmed_animation_ids(game, _body_index)
+	for record in AITD_PAK.animation_catalog(_aitd_directory.path_join("LISTANIM.PAK")):
+		var archive_index := int(record[0])
+		var associated: bool = scene_clips.has(archive_index) or confirmed_clips.has(archive_index)
+		if associated or int(record[2]) == body["groups"].size():
+			found.append({"archive_index": archive_index, "name": "Rocking" if confirmed_clips.has(archive_index) else ("Scene clip" if associated else "Compatible clip"), "associated": associated})
+	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["associated"] and not b["associated"] if a["associated"] != b["associated"] else a["archive_index"] < b["archive_index"]
+	)
+	return found
+
+
+func load_archives(archives: Dictionary, body_index: int, kind: String = "body") -> Dictionary:
 	_directory = ""
 	_archives = archives
+	asset_kind = kind
 	for archive_name in ["BODY.HQR", "ANIM.HQR", "RESS.HQR"]:
 		if not _archives.has(archive_name):
 			return {"ok": false, "error": "Missing %s" % archive_name}
@@ -78,7 +168,8 @@ func _load_body(body_index: int) -> Dictionary:
 			is_demo = true
 		if _archives.size() > 0 and not _archives.has("FILE3D.HQR"):
 			return {"ok": false, "error": "This source needs FILE3D.HQR"}
-	var body_entry := _read_entry("BODY.HQR", body_index)
+	var model_archive := "BODY.HQR" if asset_kind == "body" else ("OBJFIX.HQR" if is_lba2 or is_demo else "INVOBJ.HQR")
+	var body_entry := _read_entry(model_archive, body_index)
 	if not body_entry["ok"]:
 		return body_entry
 	# ChoicePalette in AMBIANCE.CPP uses XPL 42 indoors/after the storm and
@@ -96,12 +187,15 @@ func _load_body(body_index: int) -> Dictionary:
 	var palette_data: Dictionary = LBA2_PALETTE.decode(palette_entry["data"]) if is_lba2 else {"ok": true, "palette": palette_entry["data"].slice(0, 768) if is_demo else palette_entry["data"]}
 	if not palette_data["ok"]:
 		return palette_data
-	var decoded: Dictionary = LBA2_BODY.decode(body_entry["data"]) if is_lba2 else (LBA1BodyDecoder.decode_compact_groups(body_entry["data"]) if is_demo else LBA1BodyDecoder.decode(body_entry["data"]))
+	var decoded: Dictionary = LBA2_BODY.decode(body_entry["data"]) if is_lba2 else (LBA1BodyDecoder.decode_static(body_entry["data"]) if is_demo and asset_kind == "inventory" else (LBA1BodyDecoder.decode_compact_groups(body_entry["data"]) if is_demo else LBA1BodyDecoder.decode(body_entry["data"])))
 	if not decoded["ok"]:
 		return decoded
+	if asset_kind == "inventory":
+		decoded["appearance"] = {}
 	if is_lba2:
-		decoded["appearance"] = LBA2_OVERRIDES.for_retail_body(body_index)
-		LBA2_OVERRIDES.apply_geometry(decoded)
+		if asset_kind == "body":
+			decoded["appearance"] = LBA2_OVERRIDES.for_retail_body(body_index)
+			LBA2_OVERRIDES.apply_geometry(decoded)
 		decoded["shade_table"] = palette_data["shade_table"]
 		decoded["normal_light_level"] = palette_data["normal_level"]
 		var atlas := _read_entry("RESS.HQR", 6)
@@ -110,8 +204,9 @@ func _load_body(body_index: int) -> Dictionary:
 		decoded["texture_atlas"] = atlas["data"]
 	elif is_demo:
 		decoded["game"] = "LBA2-96"
-		decoded["appearance"] = LBA2_OVERRIDES.for_demo_body(body_index)
-		LBA2_OVERRIDES.apply_geometry(decoded)
+		if asset_kind == "body":
+			decoded["appearance"] = LBA2_OVERRIDES.for_demo_body(body_index)
+			LBA2_OVERRIDES.apply_geometry(decoded)
 		# The 1996 XPL stores the RGB palette first, then its 256x256 shade CLUT.
 		decoded["shade_table"] = palette_entry["data"].slice(768, 768 + 65536)
 		decoded["normal_light_level"] = 12
@@ -147,6 +242,7 @@ func _load_body(body_index: int) -> Dictionary:
 	_master_rotation_offset = Vector3.ZERO
 	character = CharacterMeshBuilder.build_static_pose(body, _palette, _animated_atlas.texture if _animated_atlas != null else null)
 	character.get_node("Wireframe").visible = _wireframe_enabled
+	character.get_node("Bones").visible = _bones_enabled
 	var polygon_material: ShaderMaterial = character.get_node("Polygons").material_override
 	palette_texture_ready.emit(polygon_material.get_shader_parameter("palette_texture"))
 	var points: PackedVector3Array = body["pose_points"]
@@ -155,16 +251,16 @@ func _load_body(body_index: int) -> Dictionary:
 		min_y = minf(min_y, point.y)
 	character.position = stand_position - Vector3.UP * min_y * CharacterMeshBuilder.UNIT_SCALE
 	add_child(character)
-	var shadow_loaded := _load_shadow() if game == "LBA1" else false
-	animation_entries = _find_animations(body_index)
+	var shadow_loaded := _load_shadow() if game == "LBA1" and asset_kind == "body" else false
+	animation_entries = _find_animations(body_index) if asset_kind == "body" else []
 	return {
 		"ok": true,
 		"points": points,
 		"animations": animation_entries,
-		"entry_count": first_body["entry_count"],
+		"entry_count": body_entry["entry_count"],
 		"shadow_loaded": shadow_loaded,
-		"summary": "%s BODY.HQR #%d: %d points, %d polygons, %d lines, %d spheres" % [
-			game, body_index, body["points"].size(), body["polygons"].size(), body["lines"].size(), body["spheres"].size()
+		"summary": "%s %s #%d: %d points, %d polygons, %d lines, %d spheres" % [
+			game, model_archive, body_index, body["points"].size(), body["polygons"].size(), body["lines"].size(), body["spheres"].size()
 		],
 	}
 
@@ -187,6 +283,7 @@ func select_lba2_palette(index: int) -> Dictionary:
 	character.queue_free()
 	character = CharacterMeshBuilder.build_static_pose(body, _palette, _animated_atlas.texture if _animated_atlas != null else null)
 	character.get_node("Wireframe").visible = _wireframe_enabled
+	character.get_node("Bones").visible = _bones_enabled
 	character.position = previous_position
 	add_child(character)
 	if not animation.is_empty():
@@ -225,6 +322,17 @@ func set_wireframe_visible(visible: bool) -> void:
 	if not is_instance_valid(character):
 		return
 	character.get_node("Wireframe").visible = visible
+	if visible and not animation.is_empty():
+		var next_frame := _next_frame(_current_frame)
+		var duration: int = animation["frames"][next_frame]["duration_ticks"]
+		_apply_pose(_current_frame, next_frame, _phase_ticks / float(duration))
+
+
+func set_bones_visible(visible: bool) -> void:
+	_bones_enabled = visible
+	if not is_instance_valid(character):
+		return
+	character.get_node("Bones").visible = visible
 	if visible and not animation.is_empty():
 		var next_frame := _next_frame(_current_frame)
 		var duration: int = animation["frames"][next_frame]["duration_ticks"]
@@ -409,7 +517,7 @@ func select_animation(archive_index: int) -> Dictionary:
 			if entry["archive_index"] == archive_index:
 				target_body = entry.get("body_index", _body_index)
 				break
-	var resource := _read_entry("ANIM.HQR", archive_index)
+	var resource := AITD_PAK.read_entry(_aitd_directory.path_join("LISTANIM.PAK"), archive_index) if game.begins_with("AITD") else _read_entry("ANIM.HQR", archive_index)
 	if not resource["ok"]:
 		return resource
 	var decoded := _decode_animation(archive_index, resource["data"])
@@ -422,6 +530,7 @@ func select_animation(archive_index: int) -> Dictionary:
 	if decoded["group_count"] != body["groups"].size() and body.get("appearance", {}).get("switch_body_by_animation_groups", false):
 		return {"ok": false, "error": "Animation and body skeletons do not match"}
 	animation = decoded
+	_selected_animation_index = archive_index
 	_current_frame = 0
 	_phase_ticks = 0.0
 	_root_motion_accumulated = Vector3.ZERO
@@ -448,6 +557,7 @@ func _switch_lba2_body(body_index: int) -> Dictionary:
 	_display_body_index = body_index
 	character = CharacterMeshBuilder.build_static_pose(body, _palette, _animated_atlas.texture)
 	character.get_node("Wireframe").visible = _wireframe_enabled
+	character.get_node("Bones").visible = _bones_enabled
 	var points: PackedVector3Array = body["pose_points"]
 	var min_y := points[0].y
 	for point in points:
@@ -480,7 +590,9 @@ func export_input() -> Dictionary:
 	var clips := []
 	var clips_by_body := {}
 	for entry in animation_entries:
-		var resource := _read_entry("ANIM.HQR", entry["archive_index"])
+		if game.begins_with("AITD") and not entry.get("associated", false) and entry["archive_index"] != _selected_animation_index:
+			continue
+		var resource := AITD_PAK.read_entry(_aitd_directory.path_join("LISTANIM.PAK"), entry["archive_index"]) if game.begins_with("AITD") else _read_entry("ANIM.HQR", entry["archive_index"])
 		if not resource["ok"]:
 			return {"ok": false, "error": "ANIM #%d: %s" % [entry["archive_index"], resource["error"]]}
 		var decoded := _decode_animation(entry["archive_index"], resource["data"])
@@ -513,6 +625,8 @@ func export_input() -> Dictionary:
 
 
 func _decode_animation(archive_index: int, bytes: PackedByteArray) -> Dictionary:
+	if game.begins_with("AITD"):
+		return AITD_ANIMATION.decode(bytes)
 	var decoded := LBA1AnimationDecoder.decode(bytes)
 	if not decoded["ok"] or not LBA1_SAIL_REPAIR.needs_repair(_body_index, body, archive_index):
 		return decoded
@@ -578,7 +692,7 @@ func _process(delta: float) -> void:
 			playback_ended.emit()
 			return
 		_phase_ticks -= duration
-		if next_frame <= _current_frame:
+		if next_frame <= _current_frame and not game.begins_with("AITD"):
 			var angle_scale := TAU / (1024.0 if game == "LBA1" else 4096.0)
 			var last_rotation := CharacterPose.master_rotation_units(animation, _current_frame, _current_frame, 1.0)
 			var loop_rotation := CharacterPose.master_rotation_units(animation, next_frame, next_frame, 1.0)
@@ -596,7 +710,7 @@ func _next_frame(frame_index: int) -> int:
 
 
 func _apply_pose(source_frame: int, target_frame: int, weight: float) -> void:
-	var pose: Dictionary = LBA1Pose.sample(body, animation, source_frame, target_frame, weight) if game == "LBA1" else LBA2_POSE.sample(body, animation, source_frame, target_frame, weight)
+	var pose: Dictionary = AITD_POSE.sample(body, animation, source_frame, target_frame, weight) if game.begins_with("AITD") else (LBA1Pose.sample(body, animation, source_frame, target_frame, weight) if game == "LBA1" else LBA2_POSE.sample(body, animation, source_frame, target_frame, weight))
 	CharacterMeshBuilder.update_pose(character, body, pose)
 	var rotation: Vector3 = pose["master_rotation"] + _master_rotation_offset
 	character.basis = Basis(Vector3.RIGHT, rotation.x) * Basis(Vector3.BACK, rotation.z) * Basis(Vector3.UP, rotation.y)

@@ -11,13 +11,14 @@ const LBA2_APPEARANCE := preload("res://scripts/render/lba2_appearance.gd")
 const LBA1_FACE_MODES := preload("res://scripts/render/lba1_face_modes.gd")
 const LBA1_TRANSPARENT_FACE := preload("res://shaders/lba1_transparent_face.gdshader")
 const WIREFRAME_SHADER := preload("res://shaders/wireframe_overlay.gdshader")
+const BONE_DEBUG := preload("res://scripts/render/bone_debug_overlay.gd")
 
 
 static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray, atlas_override: Texture2D = null) -> Node3D:
 	var character := Node3D.new()
 	character.name = "%sBody" % body.get("game", "LBA1")
 	var is_lba2: bool = body.get("game", "LBA1") == "LBA2"
-	var palette_texture := _make_palette_texture(palette_bytes, is_lba2 or body.get("game", "") == "LBA2-96")
+	var palette_texture := _make_palette_texture(palette_bytes, is_lba2 or body.get("game", "") == "LBA2-96" or str(body.get("game", "")).begins_with("AITD"))
 	var atlas_texture: Texture2D = atlas_override
 	var shade_texture: Texture2D = null
 	if atlas_texture == null and body.has("texture_atlas"):
@@ -64,6 +65,7 @@ static func build_static_pose(body: Dictionary, palette_bytes: PackedByteArray, 
 	wireframe.material_override = wire_material
 	wireframe.visible = false
 	character.add_child(wireframe)
+	character.add_child(BONE_DEBUG.create(body))
 	if LBA2_APPEARANCE.has_translucent_faces(body):
 		var glass := MeshInstance3D.new()
 		glass.name = "TranslucentPolygons"
@@ -123,6 +125,9 @@ static func update_pose(character: Node3D, body: Dictionary, pose: Dictionary) -
 	var wireframe: MeshInstance3D = character.get_node("Wireframe")
 	if wireframe.visible:
 		wireframe.mesh = _build_wire_mesh(body, points)
+	var bones: Node3D = character.get_node("Bones")
+	if bones.visible:
+		BONE_DEBUG.update(bones, body, points)
 	if character.has_node("TranslucentPolygons"):
 		character.get_node("TranslucentPolygons").mesh = _build_polygon_mesh(body, points, pose["bases"], true)
 	if character.has_node("LBA1TransparentPolygons"):
@@ -214,10 +219,12 @@ static func _build_polygon_mesh(body: Dictionary, points: PackedVector3Array, ba
 		var second := points[point_indices[1]]
 		var third := points[point_indices[2]]
 		var face_normal := (second - first).cross(third - first).normalized()
+		if str(body.get("game", "")).begins_with("AITD"):
+			face_normal = -face_normal
 		var surface_offset := LBA2_APPEARANCE.surface_offset_for_face(body, polygon)
 		for triangle_index in range(1, point_indices.size() - 1):
-			# LBA's projected winding is opposite Godot's front-face winding.
-			for corner in [0, triangle_index + 1, triangle_index]:
+			var corners := [0, triangle_index + 1, triangle_index]
+			for corner in corners:
 				var vertex := points[point_indices[corner]] * UNIT_SCALE
 				var rest_position: Vector3 = body["pose_points"][point_indices[corner]] * UNIT_SCALE
 				vertex += face_normal * surface_offset

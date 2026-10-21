@@ -18,6 +18,7 @@ signal export_requested(format: String, destination: String)
 signal platform_visible_changed(visible: bool)
 signal shadow_visible_changed(visible: bool)
 signal wireframe_visible_changed(visible: bool)
+signal bones_visible_changed(visible: bool)
 signal motion_grid_visible_changed(visible: bool)
 signal lba2_palette_selected(index: int)
 signal share_requested
@@ -46,11 +47,15 @@ signal embed_share_requested
 @onready var platform_label: Label = $Screen/PlatformLabel
 @onready var wireframe_toggle: CheckButton = $Screen/WireframeToggle
 @onready var wireframe_label: Label = $Screen/WireframeLabel
+@onready var bones_toggle: CheckButton = $Screen/BonesToggle
+@onready var bones_label: Label = $Screen/BonesLabel
 @onready var motion_grid_toggle: CheckButton = $Screen/MotionGridToggle
 @onready var motion_grid_label: Label = $Screen/MotionGridLabel
 
 var _syncing_frame := false
 var _has_animation := false
+var _animation_entries: Array = []
+var _show_compatible_clips := false
 var _playing := false
 var _pending_export := ""
 var _body_entry_count := 0
@@ -63,6 +68,7 @@ var _find_dialog: Control
 var _find_panel: PanelContainer
 var _find_query: LineEdit
 var _find_results: ItemList
+var _asset_picker: OptionButton
 
 
 func _ready() -> void:
@@ -75,15 +81,18 @@ func _ready() -> void:
 	$Screen/BodyNavigation/PreviousBody.pressed.connect(func() -> void: _step_body(-1))
 	$Screen/BodyNavigation/NextBody.pressed.connect(func() -> void: _step_body(1))
 	_setup_body_search()
+	_setup_asset_picker()
 	get_viewport().size_changed.connect(_update_find_layout)
 	call_deferred("_update_find_layout")
 	platform_toggle.toggled.connect(func(visible: bool) -> void: platform_visible_changed.emit(visible))
 	shadow_toggle.toggled.connect(func(visible: bool) -> void: shadow_visible_changed.emit(visible))
 	wireframe_toggle.toggled.connect(func(visible: bool) -> void: wireframe_visible_changed.emit(visible))
+	bones_toggle.toggled.connect(func(visible: bool) -> void: bones_visible_changed.emit(visible))
 	motion_grid_toggle.toggled.connect(func(visible: bool) -> void: motion_grid_visible_changed.emit(visible))
 	_bind_switch_color(platform_toggle, platform_label)
 	_bind_switch_color(shadow_toggle, shadow_label)
 	_bind_switch_color(wireframe_toggle, wireframe_label)
+	_bind_switch_color(bones_toggle, bones_label)
 	_bind_switch_color(motion_grid_toggle, motion_grid_label)
 	palette_list.item_selected.connect(func(index: int) -> void: lba2_palette_selected.emit(palette_list.get_item_id(index)))
 	$Screen/TopPanel/Vertical/SourceRow/ExportGLBButton.pressed.connect(func() -> void: _request_export("glb"))
@@ -103,7 +112,18 @@ func _ready() -> void:
 		request_load()
 	)
 	dither_mode.item_selected.connect(func(index: int) -> void: dither_changed.emit(dither_mode.get_item_id(index)))
-	animation_list.item_selected.connect(func(index: int) -> void: animation_selected.emit(animation_list.get_item_id(index)))
+	animation_list.item_selected.connect(func(index: int) -> void:
+		var archive_index := animation_list.get_item_id(index)
+		if archive_index == -2 or archive_index == -3:
+			_show_compatible_clips = archive_index == -2
+			play_changed.emit(false)
+			set_play_state(false)
+			_populate_animation_list()
+		elif archive_index >= 0:
+			play_button.disabled = false
+			frame_slider.editable = true
+			animation_selected.emit(archive_index)
+	)
 	play_button.pressed.connect(_toggle_play)
 	speed_list.item_selected.connect(_on_speed_selected)
 	frame_slider.value_changed.connect(_on_frame_changed)
@@ -124,11 +144,26 @@ func _ready() -> void:
 func set_game(game_name: String) -> void:
 	_body_game = game_name
 	palette_list.visible = game_name == "LBA2"
+	if _asset_picker != null:
+		var is_aitd := game_name.begins_with("AITD")
+		_asset_picker.visible = not is_aitd
+		if is_aitd:
+			_asset_picker.select(0)
 	_update_find_layout()
 	set_current_body(body_index())
 
 
 func set_current_body(index: int) -> void:
+	if asset_kind() == "inventory":
+		var inventory_name := BODY_NAMES.inventory_name_for(_body_game, index)
+		body_label.text = "Item · %s" % inventory_name if not inventory_name.is_empty() else "Item #%d" % index
+		body_label.tooltip_text = "Viewer label · source inventory model #%d" % index
+		return
+	if _body_game.begins_with("AITD"):
+		var aitd_name := BODY_NAMES.aitd_name_for(_body_game, index)
+		body_label.text = "AITD · %s" % aitd_name if not aitd_name.is_empty() else "PAK model #%d" % index
+		body_label.tooltip_text = "Viewer label · LISTBODY.PAK model #%d" % index
+		return
 	var name := BODY_NAMES.name_for(_body_game, index)
 	body_label.text = "BODY entry" if name.is_empty() else "BODY · %s" % (name.left(28) + "…" if name.length() > 28 else name)
 	body_label.tooltip_text = name
@@ -228,6 +263,32 @@ func _setup_body_search() -> void:
 	_update_find_layout()
 
 
+func _setup_asset_picker() -> void:
+	_asset_picker = OptionButton.new()
+	_asset_picker.add_item("Bodies", 0)
+	_asset_picker.add_item("Inventory", 1)
+	_asset_picker.tooltip_text = "Choose bodies or inventory models"
+	_asset_picker.add_theme_color_override("font_color", ACTIVE_YELLOW)
+	_asset_picker.add_theme_color_override("font_pressed_color", Color(0.12, 0.10, 0.02))
+	_asset_picker.get_popup().add_theme_color_override("font_color", INACTIVE_WHITE)
+	var row: HBoxContainer = body_number.get_parent()
+	row.add_child(_asset_picker)
+	row.move_child(_asset_picker, body_label.get_index())
+	_asset_picker.item_selected.connect(func(_index: int) -> void:
+		body_number.text = "0"
+		_body_entry_count = 0
+		request_load()
+	)
+
+
+func asset_kind() -> String:
+	if _asset_picker == null or _body_game.begins_with("AITD"):
+		return "body"
+	match _asset_picker.get_selected_id():
+		1: return "inventory"
+	return "body"
+
+
 func _update_find_layout() -> void:
 	if _find_panel == null:
 		return
@@ -235,6 +296,15 @@ func _update_find_layout() -> void:
 	var compact := viewport_size.x < 900.0
 	_find_button.visible = not compact
 	_mobile_find_button.visible = compact
+	if _asset_picker != null:
+		var target: Node = $Screen if compact else body_number.get_parent()
+		if _asset_picker.get_parent() != target:
+			_asset_picker.reparent(target)
+		if compact:
+			_asset_picker.position = Vector2(12, 126)
+			_asset_picker.size = Vector2(115, 38)
+		else:
+			body_number.get_parent().move_child(_asset_picker, body_label.get_index())
 	var panel_size := Vector2(minf(620.0, viewport_size.x - 24.0), minf(500.0, viewport_size.y - 24.0))
 	_find_panel.custom_minimum_size = panel_size
 	_find_panel.offset_left = -panel_size.x / 2.0
@@ -245,7 +315,7 @@ func _update_find_layout() -> void:
 
 func _show_body_search() -> void:
 	_find_query.clear()
-	_find_query.placeholder_text = "Search LBA1 models…" if _body_game == "LBA1" else "Name or entry number · Zoé, pram, 203…"
+	_find_query.placeholder_text = "Search name or entry number…" if asset_kind() == "inventory" or _body_game.begins_with("AITD") else ("Search LBA1 models…" if _body_game == "LBA1" else "Name or entry number · Zoé, pram, 203…")
 	_refresh_body_search()
 	_find_dialog.show()
 	_find_query.grab_focus()
@@ -255,7 +325,8 @@ func _refresh_body_search() -> void:
 	_find_results.clear()
 	var terms := BODY_NAMES.normalize(_find_query.text.strip_edges()).split(" ", false)
 	for index in range(_body_entry_count):
-		var haystack := BODY_NAMES.search_text(_body_game, index)
+		var name := BODY_NAMES.inventory_name_for(_body_game, index) if asset_kind() == "inventory" else (BODY_NAMES.aitd_name_for(_body_game, index) if _body_game.begins_with("AITD") else BODY_NAMES.name_for(_body_game, index))
+		var haystack := BODY_NAMES.normalize("%d %s" % [index, name]) if asset_kind() == "inventory" or _body_game.begins_with("AITD") else BODY_NAMES.search_text(_body_game, index)
 		var matches := true
 		for term in terms:
 			if not haystack.contains(term):
@@ -263,8 +334,7 @@ func _refresh_body_search() -> void:
 				break
 		if not matches:
 			continue
-		var name := BODY_NAMES.name_for(_body_game, index)
-		_find_results.add_item("#%d · %s" % [index, name if not name.is_empty() else "Unnamed model"])
+		_find_results.add_item("#%d · %s" % [index, name if not name.is_empty() else ("Unnamed item" if asset_kind() == "inventory" else "Unnamed model")])
 		_find_results.set_item_metadata(_find_results.item_count - 1, index)
 	if _find_results.item_count > 0:
 		_find_results.select(0)
@@ -355,27 +425,45 @@ func set_status(message: String) -> void:
 
 
 func set_animations(entries: Array) -> void:
+	_animation_entries = entries
+	_show_compatible_clips = false
+	_populate_animation_list()
+
+
+func _populate_animation_list() -> void:
 	animation_list.clear()
-	_has_animation = not entries.is_empty()
-	if entries.is_empty():
+	var associated := []
+	var compatible := []
+	for entry in _animation_entries:
+		if entry.get("associated", true):
+			associated.append(entry)
+		else:
+			compatible.append(entry)
+	var visible_entries: Array = _animation_entries if _show_compatible_clips else associated
+	_has_animation = not visible_entries.is_empty()
+	if _show_compatible_clips:
+		animation_list.add_item("← Associated clips", -3)
+	if visible_entries.is_empty():
 		animation_list.add_item("No associated animations", -1)
 	else:
-		for entry in entries:
+		for entry in visible_entries:
 			animation_list.add_item("%s · ANIM #%d" % [entry["name"], entry["archive_index"]], entry["archive_index"])
+	if not compatible.is_empty() and not _show_compatible_clips:
+		animation_list.add_item("More compatible clips… (%d)" % compatible.size(), -2)
 	animation_list.select(0)
-	animation_list.disabled = not _has_animation
-	play_button.disabled = not _has_animation
-	frame_slider.editable = _has_animation
+	animation_list.disabled = _animation_entries.is_empty()
+	play_button.disabled = not _has_animation or animation_list.get_item_id(0) < 0
+	frame_slider.editable = not play_button.disabled
 	set_play_state(false)
 	set_frame(0, 0, 0)
 
 
 func first_animation_id() -> int:
-	return animation_list.get_item_id(0) if _has_animation else -1
+	return animation_list.get_item_id(0) if _has_animation and animation_list.get_item_id(0) >= 0 else -1
 
 
 func selected_animation_id() -> int:
-	return animation_list.get_selected_id() if _has_animation else -1
+	return animation_list.get_selected_id() if _has_animation and animation_list.get_selected_id() >= 0 else -1
 
 
 func select_animation_id(archive_index: int) -> bool:
@@ -385,6 +473,8 @@ func select_animation_id(archive_index: int) -> bool:
 	if item_index < 0:
 		return false
 	animation_list.select(item_index)
+	play_button.disabled = false
+	frame_slider.editable = true
 	return true
 
 
